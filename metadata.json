@@ -1,5 +1,5 @@
 {
-  "name": "PicShrink",
+  "name": "PicShrink - Free Online Image Tools",
   "description": "Free online image tools to compress, remove background, resize, crop, convert JPG PNG WebP and image to PDF. 100% free, no watermark, browser-based private.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
