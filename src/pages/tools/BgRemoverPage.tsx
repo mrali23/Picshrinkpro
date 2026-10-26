@@ -258,7 +258,7 @@ export function BgRemoverPage() {
           <div className="max-w-3xl mx-auto my-8">
             {uploadMessage && <p role="alert" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{uploadMessage}</p>}
             <DropZone
-              onFilesSelected={handleFilesSelected
+              onFilesSelected={handleFilesSelected}
               acceptedTypes={toolMeta.acceptedTypes}
               title="Drop images here to remove background"
               description="JPG, PNG, and WebP • up to 15 MB and 12 megapixels per image"
