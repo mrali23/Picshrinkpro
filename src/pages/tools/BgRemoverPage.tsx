@@ -482,7 +482,7 @@ export function BgRemoverPage() {
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                           <Scissors className="w-3.5 h-3.5 text-pink-600" />
-                          Smart Edge-Connected
+                          Color-Based Smart Boundary
                         </span>
                         <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
                           Recommended
@@ -516,7 +516,7 @@ export function BgRemoverPage() {
                 </div>
 
 {removalMode !== 'ai' && (
-                {/* Target Background Color & Presets */}
+                <>
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-sm font-semibold text-slate-800">
@@ -619,6 +619,7 @@ export function BgRemoverPage() {
                     </span>
                   </button>
                 </div>
+                </>
                 )}
 
                 {removalMode === 'ai' ? (
