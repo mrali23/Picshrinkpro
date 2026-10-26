@@ -88,19 +88,19 @@ export const BLOG_POSTS: BlogPost[] = [
           h2: 'Why Client-Side Background Removal is Superior',
           paragraphs: [
             'Traditional background removal websites require you to upload your sensitive personal photos or copyrighted product photography to external third-party cloud servers. This introduces privacy risks, slow upload bottlenecks on cellular connections, and aggressive paywalls after one or two free trials.',
-            'PicShrink executes all edge detection and transparency math directly in your browser using client-side canvas algorithms. Your images never touch a server, meaning your confidential client work remains 100% private and protected.'
+            'PicShrink's AI background remover runs a segmentation model in your browser. Runtime and model files are downloaded from third-party hosts on first use, but the selected image is processed locally and is not uploaded by the tool.'
           ],
           bullets: [
-            'Zero wait time: Processing happens in milliseconds on your own CPU/GPU.',
+            'Local processing: The image is processed in the browser; the first model download and inference can take time.',
             'Unlimited free usage: No credit cards, no monthly subscription traps, and no watermarks.',
-            'Complete privacy: Works completely offline once the page is loaded.'
+            'Image privacy: The image itself is not uploaded. The AI model must be downloaded and may require an internet connection on first use.'
           ]
         },
         {
           h2: 'How to Cut Out Any Subject in 3 Steps',
           paragraphs: [
             '1. Open the PicShrink Background Remover and upload your picture.',
-            '2. Adjust the Tolerance and Feather sliders. PicShrink automatically detects backdrop color gradients from the corners and applies smooth anti-aliased edge feathering.',
+            '2. Adjust the Tolerance and Feather sliders. The default AI model estimates a foreground mask. Color-based smart-boundary and chroma-key modes remain available for plain-color backdrops.',
             '3. Choose whether to download a transparent PNG cutout or replace the backdrop with a clean studio white (#FFFFFF) or custom brand color.'
           ],
           callout: {
