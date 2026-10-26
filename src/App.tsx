@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
@@ -49,7 +49,7 @@ function RouteTracker() {
 export default function App() {
   return (
     <HelmetProvider>
-      <BrowserRouter>
+      <HashRouter>
         <RouteTracker />
         <div className="flex flex-col min-h-screen bg-slate-50 text-slate-800">
           <Navbar />
@@ -91,7 +91,7 @@ export default function App() {
           </main>
           <Footer />
         </div>
-      </BrowserRouter>
+      </HashRouter>
     </HelmetProvider>
   );
 }
