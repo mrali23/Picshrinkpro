@@ -43,7 +43,7 @@ export function DropZone({
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const validFiles = Array.from(e.dataTransfer.files).filter((file) =>
-        file.type.startsWith('image/')
+        file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|tiff|avif|heic|jfif)$/i.test(file.name)
       );
       if (validFiles.length > 0) {
         onFilesSelected(multiple ? validFiles : [validFiles[0]]);
@@ -54,7 +54,7 @@ export function DropZone({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const validFiles = Array.from(e.target.files).filter((file) =>
-        file.type.startsWith('image/')
+        file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|tiff|avif|heic|jfif)$/i.test(file.name)
       );
       if (validFiles.length > 0) {
         onFilesSelected(multiple ? validFiles : [validFiles[0]]);

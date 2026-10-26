@@ -11,7 +11,7 @@ export const TOOLS_DATA: ToolMeta[] = [
     iconName: 'Minimize2',
     color: 'from-blue-500 to-indigo-600',
     badge: 'Popular',
-    acceptedTypes: 'image/jpeg,image/png,image/webp,image/gif',
+    acceptedTypes: 'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif',
     faqs: [
       {
         question: 'Does compressing images reduce image visual quality?',
@@ -37,7 +37,7 @@ export const TOOLS_DATA: ToolMeta[] = [
     iconName: 'Scissors',
     color: 'from-pink-500 to-rose-600',
     badge: 'New',
-    acceptedTypes: 'image/jpeg,image/png,image/webp',
+    acceptedTypes: 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp',
     faqs: [
       {
         question: 'How does client-side background removal work in PicShrink?',
@@ -62,7 +62,7 @@ export const TOOLS_DATA: ToolMeta[] = [
     description: 'Resize JPG, PNG, and WebP images by exact pixel dimensions or percentage scale. Lock aspect ratio, optimize resolution, and batch download free.',
     iconName: 'Maximize2',
     color: 'from-emerald-500 to-teal-600',
-    acceptedTypes: 'image/jpeg,image/png,image/webp',
+    acceptedTypes: 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp',
     faqs: [
       {
         question: 'How do I maintain the original aspect ratio while resizing?',
@@ -87,7 +87,7 @@ export const TOOLS_DATA: ToolMeta[] = [
     description: 'Crop images online with preset aspect ratios like 1:1, 16:9, 4:3, 9:16 or freeform crop box. Rotate, flip, preview, and download crisp crops instantly.',
     iconName: 'Crop',
     color: 'from-amber-500 to-orange-600',
-    acceptedTypes: 'image/jpeg,image/png,image/webp',
+    acceptedTypes: 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp',
     faqs: [
       {
         question: 'Which aspect ratio presets are supported?',
@@ -112,7 +112,7 @@ export const TOOLS_DATA: ToolMeta[] = [
     description: 'Convert JPG images to high quality PNG format in seconds. Free online bulk image converter with lossless conversion, zero watermark, and batch ZIP export.',
     iconName: 'FileType2',
     color: 'from-purple-500 to-indigo-600',
-    acceptedTypes: 'image/jpeg',
+    acceptedTypes: 'image/jpeg,image/jpg,.jpg,.jpeg,.jfif',
     faqs: [
       {
         question: 'Why convert JPG to PNG format?',
@@ -137,7 +137,7 @@ export const TOOLS_DATA: ToolMeta[] = [
     description: 'Convert PNG images to compact JPG format online for free. Adjust compression quality, select background fill color for transparent areas, and download fast.',
     iconName: 'FileImage',
     color: 'from-cyan-500 to-blue-600',
-    acceptedTypes: 'image/png',
+    acceptedTypes: 'image/png,.png',
     faqs: [
       {
         question: 'What happens to transparent pixels when converting PNG to JPG?',
@@ -163,7 +163,7 @@ export const TOOLS_DATA: ToolMeta[] = [
     iconName: 'Zap',
     color: 'from-violet-500 to-purple-600',
     badge: 'Fast',
-    acceptedTypes: 'image/jpeg,image/png,image/webp,image/gif',
+    acceptedTypes: 'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif',
     faqs: [
       {
         question: 'Why is WebP recommended by Google PageSpeed?',

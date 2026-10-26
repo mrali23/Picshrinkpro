@@ -135,7 +135,7 @@ export function PngToJpgPage() {
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/png"
+        accept="image/png,.png"
         onChange={(e) => {
           if (e.target.files && e.target.files.length > 0) {
             handleFilesSelected(Array.from(e.target.files));
@@ -165,7 +165,7 @@ export function PngToJpgPage() {
           <div className="max-w-3xl mx-auto my-8">
             <DropZone
               onFilesSelected={handleFilesSelected}
-              acceptedTypes="image/png"
+              acceptedTypes="image/png,.png"
               title="Drop PNG images here to convert to JPG"
               description="Batch convert multiple PNGs to JPEG format in seconds."
             />

@@ -53,15 +53,10 @@ export function CompressorPage() {
     setIsProcessing(true);
 
     const runCompression = async () => {
-      const results = [...images];
-
-      // Mark all currently processing items
-      setImages((prev) =>
-        prev.map((img) => ({
-          ...img,
-          status: 'processing' as const,
-        }))
-      );
+      const results = images.map((img) => ({
+        ...img,
+        status: (img.status === 'done' ? 'done' : 'processing') as ProcessedImage['status'],
+      }));
 
       await Promise.all(
         images.map(async (item, idx) => {
