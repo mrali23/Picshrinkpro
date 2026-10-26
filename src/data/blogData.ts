@@ -88,7 +88,7 @@ export const BLOG_POSTS: BlogPost[] = [
           h2: 'Why Client-Side Background Removal is Superior',
           paragraphs: [
             'Traditional background removal websites require you to upload your sensitive personal photos or copyrighted product photography to external third-party cloud servers. This introduces privacy risks, slow upload bottlenecks on cellular connections, and aggressive paywalls after one or two free trials.',
-            'PicShrink's AI background remover runs a segmentation model in your browser. Runtime and model files are downloaded from third-party hosts on first use, but the selected image is processed locally and is not uploaded by the tool.'
+            'PicShrink’s AI background remover runs a segmentation model in your browser. Runtime and model files are downloaded from third-party hosts on first use, but the selected image is processed locally and is not uploaded by the tool.'
           ],
           bullets: [
             'Local processing: The image is processed in the browser; the first model download and inference can take time.',
