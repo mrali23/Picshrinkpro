@@ -6,8 +6,8 @@ export function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-slate-50 py-12">
       <SEOHead
-        title="Privacy Policy - PicShrink Zero Server Storage Guarantee"
-        description="PicShrink Privacy Policy: 100% browser-based client-side image processing. We do not store, view, or transmit your images to any remote server."
+        title="Privacy Policy - PicShrink Browser-Based Image Processing"
+        description="PicShrink processes image inputs in your browser. The AI runtime and model may be downloaded from third-party hosts; the selected image itself is processed locally."
         path="/privacy-policy"
       />
 
@@ -20,7 +20,7 @@ export function PrivacyPolicyPage() {
             Privacy Policy
           </h1>
           <p className="mt-3 text-slate-600">
-            Last Updated: October 23, 2026 • Effective Immediately
+            Last Updated: October 26, 2026
           </p>
         </div>
 
@@ -34,10 +34,7 @@ export function PrivacyPolicyPage() {
               <span>Summary: We Do Not Store, Access, Or Transmit Your Images</span>
             </div>
             <p className="text-sm text-emerald-800">
-              Unlike traditional image converter websites, PicShrink executes 100% of image
-              compression, resizing, cropping, background removal, and PDF generation directly
-              inside your web browser using HTML5 Canvas and WebAssembly. Your files never leave your
-              device and are never uploaded to any remote server or third-party cloud.
+              Image inputs for compression, resizing, cropping, conversion, and background removal are processed in your browser and are not uploaded by these tools. The AI background remover downloads its runtime and model weights from third-party content hosts on first use; those downloads do not contain your image. If you configure Google Analytics, event data is sent to Google.
             </p>
           </div>
 
@@ -58,19 +55,14 @@ export function PrivacyPolicyPage() {
           <section className="space-y-3">
             <h2 className="text-xl font-bold text-slate-900">2. Client-Side Browser Execution</h2>
             <p>
-              All image operations are performed in temporary volatile browser memory using standard
-              browser APIs (HTMLCanvasElement, FileReader, Blob, and Web Workers). Once you close or
-              refresh your browser tab, all transient data in memory is automatically expunged.
+              Image processing uses browser APIs and temporary memory. AI background removal uses a browser-hosted segmentation model; runtime and model files may be fetched from third-party hosts while your selected image is processed locally. Temporary image URLs and in-memory data are released when no longer needed.
             </p>
           </section>
 
           <section className="space-y-3">
             <h2 className="text-xl font-bold text-slate-900">3. Advertising &amp; Cookies</h2>
             <p>
-              To keep our tools freely accessible to everyone worldwide, PicShrink displays
-              third-party advertisements through Google AdSense and trusted advertising partners.
-              These vendors may use cookies, web beacons, and unique device identifiers to serve ads
-              based on prior visits to this website or other websites across the internet.
+              The interface currently includes ad-placement placeholders. These placeholders do not by themselves mean Google AdSense is active. If advertising scripts are enabled later, third-party providers may use cookies or similar technologies under their own policies.
             </p>
             <p>
               You can opt out of personalized advertising by visiting Google Ad Settings (
@@ -98,20 +90,14 @@ export function PrivacyPolicyPage() {
           <section className="space-y-3">
             <h2 className="text-xl font-bold text-slate-900">4. Analytics &amp; Web Logs</h2>
             <p>
-              We may collect standard, non-personally identifiable diagnostic telemetry (such as
-              browser type, operating system, language preferences, referring site, and general
-              geographic region) purely to diagnose browser compatibility bugs, optimize Core Web
-              Vitals, and ensure smooth performance across devices.
+              Built-in activity counters are stored in local browser storage and are not a site-wide analytics database. If a valid GA4 Measurement ID is configured, PicShrink sends page-view and tool-use events to the selected Google Analytics property. Cloudflare may process ordinary request logs to deliver and secure the site.
             </p>
           </section>
 
           <section className="space-y-3">
             <h2 className="text-xl font-bold text-slate-900">5. GDPR &amp; CCPA Compliance</h2>
             <p>
-              Because PicShrink does not collect, sell, or retain any personal data or uploaded
-              content, we inherently satisfy the data minimization principles mandated under the
-              European Union General Data Protection Regulation (GDPR) and the California Consumer
-              Privacy Act (CCPA).
+              Privacy obligations depend on enabled features, third-party services, and users' locations. This page is a plain-language summary, not a legal certification or a guarantee of compliance with a specific law.
             </p>
           </section>
 

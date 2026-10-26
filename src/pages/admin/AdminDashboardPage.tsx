@@ -33,6 +33,8 @@ import { analytics } from '../../utils/analytics';
 
 export function AdminDashboardPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isCheckingSession, setIsCheckingSession] = useState<boolean>(true);
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [usernameInput, setUsernameInput] = useState<string>('');
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -41,7 +43,7 @@ export function AdminDashboardPage() {
 
   // AdSense simulator state
   const [adsEnabled, setAdsEnabled] = useState<boolean>(true);
-  const [publisherId, setPublisherId] = useState<string>('ca-pub-9283748291038472');
+  const [publisherId, setPublisherId] = useState<string>('');
 
   // Real-time analytics & GA4 state
   const [gaInput, setGaInput] = useState<string>(analytics.getMeasurementId());
@@ -63,36 +65,60 @@ export function AdminDashboardPage() {
     setTimeout(() => setGaSaved(false), 3500);
   };
 
-  // Admin credentials from environment secrets (with production fallback)
-  const EXPECTED_USER = import.meta.env.VITE_ADMIN_USERNAME || 'admin';
-  const EXPECTED_PASS = import.meta.env.VITE_ADMIN_PASSWORD || 'picshrink_admin_secret_2026';
-
-  // Check existing session
+  // Session state is validated by the Worker using a signed HttpOnly cookie.
   useEffect(() => {
-    const sessionToken = sessionStorage.getItem('picshrink_admin_session');
-    if (sessionToken === 'authenticated') {
-      setIsAuthenticated(true);
-    }
+    let active = true;
+    fetch('/api/admin/session', { credentials: 'same-origin', cache: 'no-store' })
+      .then((response) => { if (active) setIsAuthenticated(response.ok); })
+      .catch(() => { if (active) setIsAuthenticated(false); })
+      .finally(() => { if (active) setIsCheckingSession(false); });
+    return () => { active = false; };
   }, []);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-
-    if (usernameInput.trim() === EXPECTED_USER && passwordInput.trim() === EXPECTED_PASS) {
-      sessionStorage.setItem('picshrink_admin_session', 'authenticated');
+    setIsLoggingIn(true);
+    try {
+      const response = await fetch('/api/admin/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: usernameInput, password: passwordInput }),
+        cache: 'no-store',
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setLoginError(result.error || 'Login failed. Check credentials and server configuration.');
+        return;
+      }
       setIsAuthenticated(true);
-    } else {
-      setLoginError('Invalid administrator username or secret password.');
+      setPasswordInput('');
+    } catch {
+      setLoginError('Could not contact the authentication service. Please try again.');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('picshrink_admin_session');
-    setIsAuthenticated(false);
-    setUsernameInput('');
-    setPasswordInput('');
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/admin/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+        cache: 'no-store',
+      });
+    } finally {
+      setIsAuthenticated(false);
+      setUsernameInput('');
+      setPasswordInput('');
+      setLoginError('');
+    }
   };
+
+  if (isCheckingSession) return <div role="status" className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-300">Checking administrator session…</div>;
 
   // Login Screen if unauthenticated
   if (!isAuthenticated) {
@@ -169,7 +195,7 @@ export function AdminDashboardPage() {
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4" />
-              <span>Unlock Admin Dashboard</span>
+              <span>{isLoggingIn ? 'Verifying…' : 'Unlock Admin Dashboard'}</span>
             </button>
           </form>
 
@@ -203,11 +229,11 @@ export function AdminDashboardPage() {
                   PicShrink <span className="text-blue-500">Admin Control</span>
                 </h1>
                 <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider">
-                  Live System
+                  Authenticated
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Logged in as <strong>{EXPECTED_USER}</strong> • 100% Client-Side Engine
+                Signed server session • No frontend credential storage
               </p>
             </div>
           </div>
@@ -234,13 +260,17 @@ export function AdminDashboardPage() {
           </div>
         </div>
 
+        <div role="note" className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-100">
+          <strong>Status:</strong> login is verified by the server. Built-in activity is local to this browser. Blog content is read-only; AdSense settings and SEO cards are previews, not connections to a database or Google services.
+        </div>
+
         {/* Tab Navigation */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-800">
           {[
             { id: 'analytics', label: 'Overview & Analytics', icon: BarChart3 },
-            { id: 'blog', label: 'Blog & Content (8)', icon: FileText },
-            { id: 'adsense', label: 'Monetization & Ads', icon: DollarSign },
-            { id: 'seo', label: 'Technical SEO & Sitemaps', icon: Globe },
+            { id: 'blog', label: 'Blog Content (read-only)', icon: FileText },
+            { id: 'adsense', label: 'Ad Layout Preview', icon: DollarSign },
+            { id: 'seo', label: 'SEO Checklist', icon: Globe },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -275,14 +305,14 @@ export function AdminDashboardPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm sm:text-base font-black text-white">
-                      Real-Time Analytics Engine
+                      Browser Activity Summary
                     </h3>
                     <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-extrabold uppercase tracking-wide flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Live Telemetry
                     </span>
                   </div>
                   <p className="text-xs text-slate-300 mt-0.5">
-                    Streaming active sessions, client-side tool executions, and bandwidth metrics.
+                    Shows activity stored in this browser only; it is not a site-wide visitor counter.
                   </p>
                 </div>
               </div>
@@ -326,20 +356,20 @@ export function AdminDashboardPage() {
 
               <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
-                  <span>Today's Total Pageviews</span>
+                  <span>Pageviews in This Browser Today</span>
                   <TrendingUp className="w-4 h-4 text-blue-400" />
                 </div>
                 <div className="text-3xl font-black text-white font-mono">
                   {analyticsSummary.todayPageviews}
                 </div>
                 <div className="text-[11px] text-blue-400 font-medium">
-                  Tracked across 21 pages
+                  Local events only; not all site visitors
                 </div>
               </div>
 
               <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
-                  <span>Total Megabytes Saved</span>
+                  <span>Estimated MB Saved Locally</span>
                   <HardDrive className="w-4 h-4 text-indigo-400" />
                 </div>
                 <div className="text-3xl font-black text-white font-mono">
@@ -371,7 +401,7 @@ export function AdminDashboardPage() {
                     <span>Google Analytics 4 (GA4) Real-Time Integration</span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Connect your free GA4 Measurement ID to unlock official live visitor maps, device stats, and instant event streaming.
+                    A valid GA4 Measurement ID forwards page-view and tool-use events. Local dashboard figures are not site-wide analytics.
                   </p>
                 </div>
 
@@ -470,7 +500,7 @@ export function AdminDashboardPage() {
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
                     <Activity className="w-4 h-4 text-emerald-400" />
-                    <span>Live Event Telemetry Feed</span>
+                    <span>Recent Browser Events</span>
                   </h3>
                   <span className="text-[11px] text-slate-400 font-mono">Auto-refreshed</span>
                 </div>
@@ -508,7 +538,7 @@ export function AdminDashboardPage() {
 
               {/* Popular Tools Ranking */}
               <div className="lg:col-span-5 bg-slate-900 rounded-3xl p-6 border border-slate-800 space-y-4">
-                <h3 className="text-base font-bold text-white">Top Tools by Popularity</h3>
+                <h3 className="text-base font-bold text-white">Tools Used in This Browser</h3>
 
                 <div className="space-y-3">
                   {analyticsSummary.popularTools.slice(0, 6).map((tool, idx) => (
@@ -602,9 +632,9 @@ export function AdminDashboardPage() {
           <div className="bg-slate-900 rounded-3xl p-6 border border-slate-800 space-y-6">
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
               <div>
-                <h2 className="text-lg font-bold text-white">Google AdSense Configuration</h2>
+                <h2 className="text-lg font-bold text-white">Ad Placement Preview (not connected)</h2>
                 <p className="text-xs text-slate-400">
-                  Control ads-top (728x90), ads-sidebar (300x250), and ads-bottom placements.
+                  This interface previews ad placement only; changes are not persisted or connected to Google AdSense.
                 </p>
               </div>
 
@@ -668,7 +698,7 @@ export function AdminDashboardPage() {
                   layout shifts (CLS &lt; 0.1).
                 </p>
                 <div className="pt-2 text-[11px] text-blue-300">
-                  ads.txt status: Valid at <strong>/ads.txt</strong>
+                  Check <strong>/ads.txt</strong> against your actual publisher ID before using AdSense.
                 </div>
               </div>
             </div>
@@ -687,7 +717,7 @@ export function AdminDashboardPage() {
               </div>
 
               <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30">
-                21 / 21 Pages Indexed
+                Indexing not verified here
               </span>
             </div>
 

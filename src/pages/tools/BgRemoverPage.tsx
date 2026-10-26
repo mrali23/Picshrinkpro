@@ -10,6 +10,7 @@ import { SkeletonPreview } from '../../components/common/SkeletonPreview';
 import { TOOLS_DATA } from '../../data/toolsData';
 import { ProcessedImage } from '../../types';
 import { removeImageBackground, downloadZip, formatFileSize } from '../../utils/imageProcessors';
+import { removeImageBackgroundAI } from '../../utils/aiBackgroundRemoval';
 import { saveAs } from 'file-saver';
 
 const toolMeta = TOOLS_DATA.find((t) => t.id === 'bg-remover')!;
@@ -18,7 +19,7 @@ export function BgRemoverPage() {
   const [images, setImages] = useState<ProcessedImage[]>([]);
   const [tolerance, setTolerance] = useState<number>(25);
   const [feather, setFeather] = useState<number>(1.5);
-  const [removalMode, setRemovalMode] = useState<'smart-boundary' | 'chroma-key'>('smart-boundary');
+  const [removalMode, setRemovalMode] = useState<'ai' | 'smart-boundary' | 'chroma-key'>('ai');
   const [replaceColor, setReplaceColor] = useState<string>('transparent');
   const [customKeyColor, setCustomKeyColor] = useState<{ r: number; g: number; b: number } | null>(null);
   const [detectedBgColor, setDetectedBgColor] = useState<{ r: number; g: number; b: number } | null>(null);
@@ -26,13 +27,62 @@ export function BgRemoverPage() {
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [isEyedropperActive, setIsEyedropperActive] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'slider' | 'side-by-side'>('slider');
+  const [processingNote, setProcessingNote] = useState<string>('');
+  const [uploadMessage, setUploadMessage] = useState<string>('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const originalImgRef = useRef<HTMLImageElement>(null);
 
-  const handleFilesSelected = (files: File[]) => {
-    const newItems: ProcessedImage[] = files.map((file) => ({
-      id: Math.random().toString(36).substring(2, 9),
+  const imagesRef = useRef<ProcessedImage[]>([]);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+
+  useEffect(() => () => {
+    for (const item of imagesRef.current) {
+      URL.revokeObjectURL(item.originalPreviewUrl);
+      if (item.processedUrl) URL.revokeObjectURL(item.processedUrl);
+    }
+  }, []);
+
+  const handleFilesSelected = async (files: File[]) => {
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    const maxBytes = 15 * 1024 * 1024;
+    const maxPixels = 12_000_000;
+
+    for (const file of files) {
+      if (!allowedTypes.has(file.type)) {
+        rejected.push(file.name + ': use JPG, PNG, or WebP.');
+        continue;
+      }
+      if (file.size > maxBytes) {
+        rejected.push(file.name + ': file exceeds the 15 MB limit.');
+        continue;
+      }
+      let bitmap: ImageBitmap | undefined;
+      try {
+        bitmap = await createImageBitmap(file);
+        if (bitmap.width * bitmap.height > maxPixels) {
+          rejected.push(file.name + ': image exceeds the 12-megapixel limit.');
+          continue;
+        }
+        accepted.push(file);
+      } catch {
+        rejected.push(file.name + ': the image could not be decoded.');
+      } finally {
+        bitmap?.close();
+      }
+    }
+
+    setUploadMessage(rejected.length ? 'Some files were not added. ' + rejected.join(' ') : '');
+    if (!accepted.length) return;
+
+    const newItems: ProcessedImage[] = accepted.map((file) => ({
+      id: (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+        ? crypto.randomUUID()
+        : Date.now() + '-' + Math.random().toString(36).slice(2, 10),
       originalFile: file,
       originalName: file.name,
       originalSize: file.size,
@@ -54,52 +104,60 @@ export function BgRemoverPage() {
 
     let isMounted = true;
     setIsProcessing(true);
+    setProcessingNote(removalMode === 'ai'
+      ? 'Preparing AI segmentation… first use downloads model files.'
+      : 'Removing a similar-colored background…');
 
     const runRemoval = async () => {
       const results = [...images];
-
-      await Promise.all(
-        images.map(async (item, idx) => {
-          try {
-            const { blob, width, height, detectedBgColor: detected } = await removeImageBackground(item.originalFile, {
-              tolerance,
-              feather,
-              replaceColor,
-              customKeyColor,
-              mode: removalMode,
-            });
-            if (isMounted && detected && !customKeyColor) {
-              setDetectedBgColor(detected);
-            }
-            const processedUrl = URL.createObjectURL(blob);
-            results[idx] = {
-              ...item,
-              processedBlob: blob,
-              processedUrl,
-              processedSize: blob.size,
-              processedWidth: width,
-              processedHeight: height,
-              status: 'done' as const,
-            };
-            if (isMounted) {
-              setImages([...results]);
-            }
-          } catch (err: any) {
-            results[idx] = {
-              ...item,
-              status: 'error' as const,
-              error: err.message || 'Background removal failed',
-            };
-            if (isMounted) {
-              setImages([...results]);
-            }
+      // Limit concurrent full-resolution processing to keep browser memory use predictable.
+      for (let idx = 0; idx < images.length; idx++) {
+        if (!isMounted) return;
+        const item = images[idx];
+        try {
+          const result = removalMode === 'ai'
+            ? await removeImageBackgroundAI(item.originalFile, {
+                replaceColor,
+                onProgress: (note) => { if (isMounted) setProcessingNote(note); },
+              })
+            : await removeImageBackground(item.originalFile, {
+                tolerance,
+                feather,
+                replaceColor,
+                customKeyColor,
+                mode: removalMode,
+              });
+          if (!isMounted) return;
+          if ('detectedBgColor' in result && result.detectedBgColor && !customKeyColor) {
+            setDetectedBgColor(result.detectedBgColor);
           }
-        })
-      );
-
+          if (item.processedUrl) URL.revokeObjectURL(item.processedUrl);
+          const processedUrl = URL.createObjectURL(result.blob);
+          results[idx] = {
+            ...item,
+            processedBlob: result.blob,
+            processedUrl,
+            processedSize: result.blob.size,
+            processedWidth: result.width,
+            processedHeight: result.height,
+            status: 'done' as const,
+            error: undefined,
+          };
+          setImages([...results]);
+        } catch (err: unknown) {
+          if (!isMounted) return;
+          results[idx] = {
+            ...item,
+            status: 'error' as const,
+            error: err instanceof Error ? err.message : 'Background removal failed',
+          };
+          setImages([...results]);
+        }
+      }
       if (isMounted) {
         setImages(results);
         setIsProcessing(false);
+        setProcessingNote('');
       }
     };
 
@@ -183,14 +241,13 @@ export function BgRemoverPage() {
         {/* H1 & Header */}
         <div className="text-center max-w-3xl mx-auto">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-pink-100 text-pink-700 mb-3">
-            <Scissors className="w-3.5 h-3.5" /> Fast AI Cutout
+            <Scissors className="w-3.5 h-3.5" /> AI Background Removal
           </span>
           <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">
             Free Background Remover
           </h1>
           <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
-            Remove image backgrounds in seconds. Create clean transparent PNGs or replace backdrops
-            with solid colors with zero server uploads and zero watermarks.
+            Create transparent PNG cutouts with AI segmentation in your browser. The first use downloads model files; your selected image itself is processed locally.
           </p>
         </div>
 
@@ -199,11 +256,12 @@ export function BgRemoverPage() {
 
         {images.length === 0 ? (
           <div className="max-w-3xl mx-auto my-8">
+            {uploadMessage && <p role="alert" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{uploadMessage}</p>}
             <DropZone
               onFilesSelected={handleFilesSelected}
               acceptedTypes={toolMeta.acceptedTypes}
               title="Drop images here to remove background"
-              description="Supports JPG, PNG, and WebP. Works 100% locally in your browser."
+              description="JPG, PNG, and WebP • up to 15 MB and 12 megapixels per image"
             />
           </div>
         ) : (
@@ -268,7 +326,7 @@ export function BgRemoverPage() {
                       <SkeletonPreview
                         mode={viewMode}
                         statusText={`Removing background from ${activeImage.originalName}...`}
-                        subText="In-browser alpha thresholding & edge feathering • Zero server uploads"
+                        subText={processingNote || (removalMode === 'ai' ? 'AI segmentation runs in the browser; the first model download may take a while.' : 'Color-distance masking and edge feathering in your browser.')}
                         heightClass="h-72 sm:h-80"
                       />
                     ) : activeImage.processedUrl ? (
@@ -359,6 +417,8 @@ export function BgRemoverPage() {
                 selectedImageId={selectedImageId}
                 onSelectImage={(id) => setSelectedImageId(id)}
                 onRemoveImage={(id) => {
+                  const removed = images.find((item) => item.id === id);
+                  if (removed) { URL.revokeObjectURL(removed.originalPreviewUrl); if (removed.processedUrl) URL.revokeObjectURL(removed.processedUrl); }
                   setImages((prev) => {
                     const filtered = prev.filter((i) => i.id !== id);
                     if (selectedImageId === id) setSelectedImageId(filtered[0]?.id || null);
@@ -366,6 +426,7 @@ export function BgRemoverPage() {
                   });
                 }}
                 onClearAll={() => {
+                  for (const item of images) { URL.revokeObjectURL(item.originalPreviewUrl); if (item.processedUrl) URL.revokeObjectURL(item.processedUrl); }
                   setImages([]);
                   setSelectedImageId(null);
                 }}
@@ -395,6 +456,22 @@ export function BgRemoverPage() {
                   <div className="grid grid-cols-1 gap-2">
                     <button
                       type="button"
+                      onClick={() => setRemovalMode('ai')}
+                      className={removalMode === 'ai' ? 'p-3 rounded-2xl border text-left transition-all bg-pink-50/80 border-pink-500 ring-2 ring-pink-500/30' : 'p-3 rounded-2xl border text-left transition-all bg-slate-50 border-slate-200 hover:bg-slate-100/70'}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <Scissors className="w-3.5 h-3.5 text-pink-600" />
+                          AI Subject Segmentation
+                        </span>
+                        <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">Recommended</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-normal">
+                        Uses an ONNX segmentation model in the browser. Initial model download is large; the photo stays local.
+                      </p>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setRemovalMode('smart-boundary')}
                       className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                         removalMode === 'smart-boundary'
@@ -405,14 +482,14 @@ export function BgRemoverPage() {
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                           <Scissors className="w-3.5 h-3.5 text-pink-600" />
-                          Smart Edge-Connected
+                          Color-Based Smart Boundary
                         </span>
                         <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
                           Recommended
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-1 leading-normal">
-                        Floods from image borders inward. Completely protects subject face, skin, eyes, and clothes from erasing!
+                        Removes similarly colored pixels connected to image edges. Best for plain backgrounds; can affect similar-colored subject details.
                       </p>
                     </button>
 
@@ -438,7 +515,8 @@ export function BgRemoverPage() {
                   </div>
                 </div>
 
-                {/* Target Background Color & Presets */}
+{removalMode !== 'ai' && (
+                <>
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-sm font-semibold text-slate-800">
@@ -541,7 +619,15 @@ export function BgRemoverPage() {
                     </span>
                   </button>
                 </div>
+                </>
+                )}
 
+                {removalMode === 'ai' ? (
+                  <p className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">
+                    AI mode performs foreground segmentation. Tolerance, eyedropper, and feather settings apply to the color-based modes only.
+                  </p>
+                ) : (
+                  <>
                 {/* Tolerance Slider */}
                 <div>
                   <div className="flex justify-between items-center mb-1">
@@ -586,6 +672,8 @@ export function BgRemoverPage() {
                     <span>Soft 5px</span>
                   </div>
                 </div>
+                  </>
+                )}
 
                 {/* Background Replacement Options */}
                 <div>
@@ -683,7 +771,7 @@ export function BgRemoverPage() {
         <FaqSection
           faqs={toolMeta.faqs}
           title="Background Removal FAQs"
-          subtitle="Learn how our client-side background remover extracts subjects with zero server uploads."
+          subtitle="AI segmentation is the default. Color-based methods remain available for simple plain-color backgrounds."
         />
       </div>
     </div>
