@@ -1,33 +1,33 @@
-import { useEffect } from 'react';
-import { HashRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
+import { lazy, Suspense, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 
-// Pages
-import { HomePage } from './pages/HomePage';
-import { CompressorPage } from './pages/tools/CompressorPage';
-import { BgRemoverPage } from './pages/tools/BgRemoverPage';
-import { ResizerPage } from './pages/tools/ResizerPage';
-import { CropperPage } from './pages/tools/CropperPage';
-import { JpgToPngPage } from './pages/tools/JpgToPngPage';
-import { PngToJpgPage } from './pages/tools/PngToJpgPage';
-import { WebpConverterPage } from './pages/tools/WebpConverterPage';
-import { ImageToPdfPage } from './pages/tools/ImageToPdfPage';
-import { FiltersPage } from './pages/tools/FiltersPage';
+// Route-level lazy loading keeps image-processing dependencies out of the initial page bundle.
+const HomePage = lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })));
+const CompressorPage = lazy(() => import('./pages/tools/CompressorPage').then(m => ({ default: m.CompressorPage })));
+const BgRemoverPage = lazy(() => import('./pages/tools/BgRemoverPage').then(m => ({ default: m.BgRemoverPage })));
+const ResizerPage = lazy(() => import('./pages/tools/ResizerPage').then(m => ({ default: m.ResizerPage })));
+const CropperPage = lazy(() => import('./pages/tools/CropperPage').then(m => ({ default: m.CropperPage })));
+const JpgToPngPage = lazy(() => import('./pages/tools/JpgToPngPage').then(m => ({ default: m.JpgToPngPage })));
+const PngToJpgPage = lazy(() => import('./pages/tools/PngToJpgPage').then(m => ({ default: m.PngToJpgPage })));
+const WebpConverterPage = lazy(() => import('./pages/tools/WebpConverterPage').then(m => ({ default: m.WebpConverterPage })));
+const ImageToPdfPage = lazy(() => import('./pages/tools/ImageToPdfPage').then(m => ({ default: m.ImageToPdfPage })));
+const FiltersPage = lazy(() => import('./pages/tools/FiltersPage').then(m => ({ default: m.FiltersPage })));
 
-// Legal & Company
-import { AboutPage } from './pages/legal/AboutPage';
-import { PrivacyPolicyPage } from './pages/legal/PrivacyPolicyPage';
-import { TermsPage } from './pages/legal/TermsPage';
-import { ContactPage } from './pages/legal/ContactPage';
+// Legal pages
+const AboutPage = lazy(() => import('./pages/legal/AboutPage').then(m => ({ default: m.AboutPage })));
+const PrivacyPolicyPage = lazy(() => import('./pages/legal/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })));
+const TermsPage = lazy(() => import('./pages/legal/TermsPage').then(m => ({ default: m.TermsPage })));
+const ContactPage = lazy(() => import('./pages/legal/ContactPage').then(m => ({ default: m.ContactPage })));
 
-// Blog
-import { BlogIndexPage } from './pages/blog/BlogIndexPage';
-import { BlogPostPage } from './pages/blog/BlogPostPage';
+// Blog pages
+const BlogIndexPage = lazy(() => import('./pages/blog/BlogIndexPage').then(m => ({ default: m.BlogIndexPage })));
+const BlogPostPage = lazy(() => import('./pages/blog/BlogPostPage').then(m => ({ default: m.BlogPostPage })));
 
 // Admin
-import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
+const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })));
 import { analytics } from './utils/analytics';
 
 // Scroll to top & real-time analytics tracker on route change
@@ -49,11 +49,12 @@ function RouteTracker() {
 export default function App() {
   return (
     <HelmetProvider>
-      <HashRouter>
+      <BrowserRouter>
         <RouteTracker />
         <div className="flex flex-col min-h-screen bg-slate-50 text-slate-800">
           <Navbar />
           <main className="flex-1">
+            <Suspense fallback={<div role="status" className="mx-auto max-w-5xl px-4 py-16 text-center text-slate-500">Loading page…</div>}>
             <Routes>
               {/* 1. Home Page */}
               <Route path="/" element={<HomePage />} />
@@ -88,10 +89,11 @@ export default function App() {
               <Route path="/admin" element={<AdminDashboardPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+            </Suspense>
           </main>
           <Footer />
         </div>
-      </HashRouter>
+      </BrowserRouter>
     </HelmetProvider>
   );
 }

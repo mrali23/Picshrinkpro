@@ -348,6 +348,7 @@ export async function removeImageBackground(
   const img = await loadImage(file);
   const width = img.naturalWidth;
   const height = img.naturalHeight;
+  if (!width || !height || width * height > 12_000_000) throw new Error('Image is too large for color-based processing. Use an image at or below 12 megapixels.');
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
