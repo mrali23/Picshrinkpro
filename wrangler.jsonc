@@ -4,6 +4,14 @@
   "main": "./src/worker.ts",
   "compatibility_date": "2026-10-26",
   "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [
+      { "name": "ADMIN_DATA", "class_name": "AdminData" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["AdminData"] }
+  ],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

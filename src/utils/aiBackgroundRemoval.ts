@@ -76,11 +76,11 @@ export async function removeImageBackgroundAI(file: File, options: { replaceColo
     if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
       try {
         options.onProgress?.('Preparing AI model for GPU acceleration…');
-        output = await (await getSegmenter('webgpu', options.onProgress))([localUrl]);
+        output = await (await getSegmenter('webgpu', options.onProgress))(localUrl);
       } catch {
         gpuPromise = null;
         options.onProgress?.('GPU acceleration unavailable; switching to compatible CPU mode…');
-        output = await (await getSegmenter('wasm', options.onProgress))([localUrl]);
+        output = await (await getSegmenter('wasm', options.onProgress))(localUrl);
       }
     } else {
       options.onProgress?.('Loading the AI model. First use downloads model files; this can take a while.');

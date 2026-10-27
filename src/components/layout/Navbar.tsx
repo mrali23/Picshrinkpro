@@ -16,6 +16,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { TOOLS_DATA } from '../../data/toolsData';
+import { usePublicSiteSettings } from '../../utils/siteSettings';
 
 const iconMap: Record<string, any> = {
   Minimize2,
@@ -34,6 +35,7 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
+  const { siteName } = usePublicSiteSettings();
 
   // Close menus on route change
   useEffect(() => {
@@ -74,7 +76,7 @@ export function Navbar() {
             </div>
             <div className="flex flex-col">
               <span className="text-xl font-black tracking-tight text-slate-900 group-hover:text-blue-600 transition-colors">
-                Pic<span className="text-blue-600">Shrink</span>
+                {siteName}
               </span>
               <span className="text-[10px] font-medium tracking-wide text-slate-400 -mt-1 hidden sm:block">
                 Free Online Image Tools

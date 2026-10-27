@@ -1,54 +1,69 @@
+import { useEffect, useRef } from 'react';
+import { usePublicSiteSettings } from '../../utils/siteSettings';
+
 interface AdBannerProps {
   type: 'top' | 'sidebar' | 'bottom';
   className?: string;
 }
 
+declare global {
+  interface Window {
+    adsbygoogle?: Record<string, unknown>[];
+  }
+}
+
 export function AdBanner({ type, className = '' }: AdBannerProps) {
-  if (type === 'top') {
+  const settings = usePublicSiteSettings();
+  const adRef = useRef<HTMLModElement>(null);
+
+  const slot = settings.adSlots[type];
+  const hasAd = settings.adsEnabled && /^ca-pub-\d{8,24}$/.test(settings.adsensePublisherId) && /^\d{1,24}$/.test(slot);
+
+  useEffect(() => {
+    if (!hasAd) return;
+    const scriptId = 'picshrink-adsense-script';
+    let script = document.getElementById(scriptId) as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement('script');
+      script.id = scriptId;
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(settings.adsensePublisherId)}`;
+      document.head.appendChild(script);
+    }
+
+    const element = adRef.current;
+    if (!element || element.dataset.adsbygoogleStatus) return;
+    try {
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
+    } catch (error) {
+      console.error('AdSense ad could not be initialized:', error);
+    }
+  }, [hasAd, settings.adsensePublisherId, slot]);
+
+  if (hasAd) {
+    const isSidebar = type === 'sidebar';
     return (
-      <div className={`ads-top my-6 mx-auto w-full max-w-[728px] overflow-hidden ${className}`}>
-        <div className="flex flex-col items-center justify-center h-[90px] bg-slate-100/80 border border-dashed border-slate-300 rounded-xl px-4 text-center transition-all hover:bg-slate-100">
-          <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-1">
-            Advertisement
-          </span>
-          <div className="text-xs text-slate-500 font-medium flex items-center gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-blue-500/50"></span>
-            728 x 90 Responsive Leaderboard Ad Placement
-          </div>
-        </div>
+      <div className={`mx-auto my-6 w-full overflow-hidden text-center ${isSidebar ? 'max-w-[300px]' : 'max-w-[728px]'} ${className}`}>
+        <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-400">Advertisement</span>
+        <ins key={`${settings.adsensePublisherId}-${slot}`} ref={adRef} className="adsbygoogle"
+          style={{ display: 'block', minHeight: isSidebar ? 250 : 90 }}
+          data-ad-client={settings.adsensePublisherId}
+          data-ad-slot={slot}
+          data-ad-format="auto"
+          data-full-width-responsive="true" />
       </div>
     );
   }
 
-  if (type === 'sidebar') {
-    return (
-      <div className={`ads-sidebar w-full max-w-[300px] mx-auto my-4 overflow-hidden ${className}`}>
-        <div className="flex flex-col items-center justify-center h-[250px] bg-slate-100/80 border border-dashed border-slate-300 rounded-xl p-4 text-center transition-all hover:bg-slate-100">
-          <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-2">
-            Advertisement
-          </span>
-          <div className="text-xs text-slate-500 font-medium">
-            300 x 250 Medium Rectangle Ad
-          </div>
-          <p className="text-[11px] text-slate-400 mt-2 max-w-[200px]">
-            High-converting targeted sponsor ad slot
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // type === 'bottom'
+  const dimensions = type === 'sidebar' ? 'h-[250px] max-w-[300px]' : 'h-[90px] max-w-[728px]';
   return (
-    <div className={`ads-bottom my-8 mx-auto w-full max-w-[728px] overflow-hidden ${className}`}>
-      <div className="flex flex-col items-center justify-center min-h-[90px] py-4 bg-slate-100/80 border border-dashed border-slate-300 rounded-xl px-4 text-center transition-all hover:bg-slate-100">
-        <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-1">
-          Advertisement
+    <div className={`mx-auto my-6 w-full ${dimensions} ${className}`}>
+      <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-100/80 px-4 text-center">
+        <span className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Advertisement</span>
+        <span className="text-xs font-medium text-slate-500">
+          {settings.adsEnabled ? 'Add a publisher ID and this placement’s AdSense slot ID in Admin → Site settings.' : 'AdSense is not configured.'}
         </span>
-        <div className="text-xs text-slate-500 font-medium flex items-center gap-2">
-          <span className="inline-block w-2 h-2 rounded-full bg-indigo-500/50"></span>
-          Post-Download Banner Ad (728 x 90)
-        </div>
       </div>
     </div>
   );

@@ -47,7 +47,7 @@ export function PrivacyPolicyPage() {
             </p>
             <ul className="list-disc pl-6 space-y-1 text-slate-600">
               <li>Your uploaded photos, graphics, documents, or image metadata.</li>
-              <li>Your identity, personal email address, or phone number.</li>
+              <li>Your identity, personal email address, or phone number. Anonymous browser activity identifiers are used for site-wide usage counts when the analytics endpoint is available.</li>
               <li>Payment details or credit card information (our tools are 100% free).</li>
             </ul>
           </section>
@@ -62,7 +62,7 @@ export function PrivacyPolicyPage() {
           <section className="space-y-3">
             <h2 className="text-xl font-bold text-slate-900">3. Advertising &amp; Cookies</h2>
             <p>
-              The interface currently includes ad-placement placeholders. These placeholders do not by themselves mean Google AdSense is active. If advertising scripts are enabled later, third-party providers may use cookies or similar technologies under their own policies.
+              AdSense ads load only when the site administrator enables them and configures a publisher account and ad slots. Google and its partners may use cookies or similar technologies to serve and measure ads under their own policies.
             </p>
             <p>
               You can opt out of personalized advertising by visiting Google Ad Settings (
@@ -90,7 +90,7 @@ export function PrivacyPolicyPage() {
           <section className="space-y-3">
             <h2 className="text-xl font-bold text-slate-900">4. Analytics &amp; Web Logs</h2>
             <p>
-              Built-in activity counters are stored in local browser storage and are not a site-wide analytics database. If a valid GA4 Measurement ID is configured, PicShrink sends page-view and tool-use events to the selected Google Analytics property. Cloudflare may process ordinary request logs to deliver and secure the site.
+              The site records page views and image-tool runs using a random browser identifier, page path, and event time. The identifier is kept in browser storage and is used to estimate visitors active in the last five minutes; uploaded images and IP addresses are not included in these analytics events. The site-wide counts are stored by Cloudflare. If a GA4 Measurement ID is configured, page-view and tool-use events are also sent to that Google Analytics property. Cloudflare may process ordinary request logs to deliver and secure the site.
             </p>
           </section>
 

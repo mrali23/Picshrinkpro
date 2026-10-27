@@ -1,4 +1,5 @@
 import { Helmet } from 'react-helmet-async';
+import { usePublicSiteSettings } from '../../utils/siteSettings';
 
 interface SEOHeadProps {
   title: string;
@@ -30,32 +31,35 @@ export function SEOHead({
   schema,
   articleData,
 }: SEOHeadProps) {
+  const { siteName, siteDescription } = usePublicSiteSettings();
   const origin = getOrigin();
   const cleanPath = path === '/' ? '' : path.startsWith('/') ? path : `/${path}`;
   const canonicalUrl = origin ? `${origin}${cleanPath || '/'}` : cleanPath || '/';
   const resolvedOgImage = ogImage.startsWith('http') || !origin ? ogImage : `${origin}${ogImage}`;
+  const pageTitle = title.replace(/PicShrink/gi, siteName);
+  const pageDescription = path === '/' ? siteDescription : description;
 
   return (
     <Helmet>
       {/* Primary Meta Tags */}
-      <title>{title}</title>
-      <meta name="title" content={title} />
-      <meta name="description" content={description} />
+      <title>{pageTitle}</title>
+      <meta name="title" content={pageTitle} />
+      <meta name="description" content={pageDescription} />
       <link rel="canonical" href={canonicalUrl} />
 
       {/* Open Graph / Facebook */}
       <meta property="og:type" content={ogType} />
       <meta property="og:url" content={canonicalUrl} />
-      <meta property="og:title" content={title} />
-      <meta property="og:description" content={description} />
+      <meta property="og:title" content={pageTitle} />
+      <meta property="og:description" content={pageDescription} />
       <meta property="og:image" content={resolvedOgImage} />
-      <meta property="og:site_name" content="PicShrink" />
+      <meta property="og:site_name" content={siteName} />
 
       {/* Twitter Cards */}
       <meta name="twitter:card" content="summary_large_image" />
       <meta name="twitter:url" content={canonicalUrl} />
-      <meta name="twitter:title" content={title} />
-      <meta name="twitter:description" content={description} />
+      <meta name="twitter:title" content={pageTitle} />
+      <meta name="twitter:description" content={pageDescription} />
       <meta name="twitter:image" content={resolvedOgImage} />
 
       {/* Article specific metadata */}

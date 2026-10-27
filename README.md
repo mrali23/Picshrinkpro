@@ -9,6 +9,18 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
+Open `http://localhost:3000/admin` for the admin panel. Local admin credentials are read from a `.dev.vars` file in the project root (it is git-ignored):
+
+```text
+ADMIN_USERNAME=your-admin-name
+ADMIN_PASSWORD=your-strong-local-password
+SESSION_SECRET=replace-with-at-least-32-random-characters
+```
+
+The Vite development server exposes the same admin API with in-memory storage, so local settings and counts reset when the dev server restarts. The deployed Worker uses Durable Object storage and persists settings and site-wide analytics.
+
+The admin credentials are Worker secrets, not fields in the site settings page. In production, set `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `SESSION_SECRET` under the Cloudflare Worker settings as described below.
+
 ## Production build
 
 ```sh
@@ -44,9 +56,15 @@ npx wrangler secret put SESSION_SECRET
 
 The Cloudflare Worker requires the secrets at runtime. This repository intentionally contains no default admin credentials.
 
-## Admin dashboard feature status
+## Admin dashboard, analytics, and ads
 
-The login is authenticated server-side. The current dashboard's blog list is read-only, and ad/SEO configuration cards are UI previews; those panels are not yet backed by a CMS database or actual Google AdSense/Google Search Console write APIs. Local activity counters are browser-local; connect a valid GA4 Measurement ID to send events to that GA4 property. They are not site-wide counts.
+Open `/admin` and sign in with the Worker credentials. The dashboard stores site name/description, the GA4 Measurement ID, and AdSense publisher/placement IDs in a Cloudflare Durable Object. The Durable Object is configured in `wrangler.jsonc`; deploy the Worker with Wrangler so its SQLite-backed namespace is provisioned.
+
+The dashboard's live counters are site-wide page views, image-tool runs, popular tools, recent activity, and anonymous browsers active in the last five minutes. Events contain a random browser ID, event type, page path, and timestamp; image files are never sent. The admin page itself is excluded from visitor counts. A configured GA4 ID also sends page-view and tool-use events to Google Analytics; detailed GA4 reports remain in Google Analytics and are not pulled into this dashboard.
+
+For AdSense, enter your approved `ca-pub-…` publisher ID and the ad unit slot ID for each placement, then enable ads and save. Ads render only where both IDs are configured. Google must approve the site and ad units before live ads can serve; the site cannot activate or approve an AdSense account on your behalf.
+
+For privacy, update the site's privacy policy to reflect the analytics and advertising services you enable and the jurisdictions where you operate.
 
 ## Validation
 

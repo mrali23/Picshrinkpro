@@ -9,11 +9,18 @@ import { BatchQueueManager } from '../../components/common/BatchQueueManager';
 import { SkeletonPreview } from '../../components/common/SkeletonPreview';
 import { TOOLS_DATA } from '../../data/toolsData';
 import { ProcessedImage } from '../../types';
-import { removeImageBackground, downloadZip, formatFileSize } from '../../utils/imageProcessors';
+import { removeImageBackground, downloadZip, formatFileSize, type RGBColor } from '../../utils/imageProcessors';
 import { removeImageBackgroundAI } from '../../utils/aiBackgroundRemoval';
 import { saveAs } from 'file-saver';
 
 const toolMeta = TOOLS_DATA.find((t) => t.id === 'bg-remover')!;
+
+function isRGBColor(value: unknown): value is RGBColor {
+  return typeof value === 'object' && value !== null &&
+    'r' in value && typeof value.r === 'number' &&
+    'g' in value && typeof value.g === 'number' &&
+    'b' in value && typeof value.b === 'number';
+}
 
 export function BgRemoverPage() {
   const [images, setImages] = useState<ProcessedImage[]>([]);
@@ -128,7 +135,7 @@ export function BgRemoverPage() {
                 mode: removalMode,
               });
           if (!isMounted) return;
-          if ('detectedBgColor' in result && result.detectedBgColor && !customKeyColor) {
+          if ('detectedBgColor' in result && isRGBColor(result.detectedBgColor) && !customKeyColor) {
             setDetectedBgColor(result.detectedBgColor);
           }
           if (item.processedUrl) URL.revokeObjectURL(item.processedUrl);

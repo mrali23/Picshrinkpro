@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom';
 import { ShieldCheck, Lock } from 'lucide-react';
 import { TOOLS_DATA } from '../../data/toolsData';
+import { usePublicSiteSettings } from '../../utils/siteSettings';
 
 export function Footer() {
+  const { siteName } = usePublicSiteSettings();
   return (
     <footer className="bg-slate-900 text-slate-300 pt-16 pb-12 border-t border-slate-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -25,12 +27,12 @@ export function Footer() {
                 </svg>
               </div>
               <span className="text-xl font-black tracking-tight text-white">
-                Pic<span className="text-blue-500">Shrink</span>
+                {siteName}
               </span>
             </Link>
 
             <p className="text-sm text-slate-400 max-w-sm leading-relaxed">
-              PicShrink is a free suite of privacy-first, client-side online image tools.
+              {siteName} is a free suite of privacy-first, client-side online image tools.
               Compress, remove background, resize, crop, and convert JPG, PNG, WebP, and PDF
               with zero server uploads and zero watermarks.
             </p>
@@ -116,12 +118,12 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
           <div>
-            <span>© 2026 PicShrink. All rights reserved.</span>
+            <span>© {new Date().getFullYear()} {siteName}. All rights reserved.</span>
           </div>
 
           <div className="flex items-center gap-6">
             <span className="flex items-center gap-1.5 text-emerald-400">
-              <ShieldCheck className="w-4 h-4" /> Zero Server Telemetry
+              <ShieldCheck className="w-4 h-4" /> No Image Uploads
             </span>
           </div>
         </div>
