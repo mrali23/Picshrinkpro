@@ -46,6 +46,7 @@ export interface BlogPost {
   category: string;
   tags: string[];
   image: string;
+  references?: { title: string; source: string; url: string }[];
   content: {
     lead: string;
     sections: {

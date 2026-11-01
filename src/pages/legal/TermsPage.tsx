@@ -1,15 +1,12 @@
 import { SEOHead } from '../../components/common/SEOHead';
+import { PAGE_META } from '../../data/pagesMeta';
 import { FileText, ShieldAlert } from 'lucide-react';
 import { AdBanner } from '../../components/common/AdBanner';
 
 export function TermsPage() {
   return (
     <div className="min-h-screen bg-slate-50 py-12">
-      <SEOHead
-        title="Terms of Service - PicShrink Free Online Image Tools"
-        description="PicShrink Terms of Service: Guidelines, allowable usage, disclaimer of warranties, and service terms for our free online image tools."
-        path="/terms"
-      />
+      <SEOHead {...PAGE_META['/terms']} />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-2xl mx-auto mb-10">

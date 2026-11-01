@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, Calendar, Clock, ArrowRight, Search, Sparkles } from 'lucide-react';
 import { SEOHead } from '../../components/common/SEOHead';
+import { PAGE_META } from '../../data/pagesMeta';
 import { AdBanner } from '../../components/common/AdBanner';
 import { BLOG_POSTS } from '../../data/blogData';
 
@@ -24,11 +25,7 @@ export function BlogIndexPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 py-12">
-      <SEOHead
-        title="PicShrink Blog - Image Optimization Guides & Tutorials"
-        description="Expert tutorials and guides on image compression, background removal, WebP conversion, social media sizing, and web performance optimization."
-        path="/blog"
-      />
+      <SEOHead {...PAGE_META['/blog']} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}

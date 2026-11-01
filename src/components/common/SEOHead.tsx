@@ -1,5 +1,6 @@
 import { Helmet } from 'react-helmet-async';
 import { usePublicSiteSettings } from '../../utils/siteSettings';
+import { DEFAULT_OG_IMAGE, SITE_URL } from '../../data/siteConfig';
 
 interface SEOHeadProps {
   title: string;
@@ -15,27 +16,21 @@ interface SEOHeadProps {
   };
 }
 
-const getOrigin = () => {
-  if (typeof window !== 'undefined' && window.location.origin) {
-    return window.location.origin;
-  }
-  return '';
-};
-
 export function SEOHead({
   title,
   description,
   path,
   ogType = 'website',
-  ogImage = '/favicon.svg',
+  ogImage = DEFAULT_OG_IMAGE,
   schema,
   articleData,
 }: SEOHeadProps) {
   const { siteName, siteDescription } = usePublicSiteSettings();
-  const origin = getOrigin();
+  // Always point canonical and social URLs at the real domain, never at whichever
+  // host the page happens to be opened from (workers.dev, www, localhost).
   const cleanPath = path === '/' ? '' : path.startsWith('/') ? path : `/${path}`;
-  const canonicalUrl = origin ? `${origin}${cleanPath || '/'}` : cleanPath || '/';
-  const resolvedOgImage = ogImage.startsWith('http') || !origin ? ogImage : `${origin}${ogImage}`;
+  const canonicalUrl = `${SITE_URL}${cleanPath || '/'}`;
+  const resolvedOgImage = ogImage.startsWith('http') ? ogImage : `${SITE_URL}${ogImage}`;
   const pageTitle = title.replace(/PicShrink/gi, siteName);
   const pageDescription = path === '/' ? siteDescription : description;
 

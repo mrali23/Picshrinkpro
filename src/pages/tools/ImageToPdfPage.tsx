@@ -15,6 +15,7 @@ import { SEOHead } from '../../components/common/SEOHead';
 import { DropZone } from '../../components/common/DropZone';
 import { AdBanner } from '../../components/common/AdBanner';
 import { FaqSection } from '../../components/common/FaqSection';
+import { RelatedTools } from '../../components/common/RelatedTools';
 import { SkeletonPreview } from '../../components/common/SkeletonPreview';
 import { TOOLS_DATA } from '../../data/toolsData';
 import { ProcessedImage } from '../../types';
@@ -418,6 +419,7 @@ export function ImageToPdfPage() {
           title="Image to PDF FAQs"
           subtitle="Learn how to merge images into unified PDF files safely in your browser."
         />
+        <RelatedTools toolId={toolMeta.id} />
       </div>
     </div>
   );

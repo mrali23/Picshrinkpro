@@ -1,15 +1,12 @@
 import { SEOHead } from '../../components/common/SEOHead';
+import { PAGE_META } from '../../data/pagesMeta';
 import { ShieldCheck, Cpu, Zap, Lock, Heart, CheckCircle2 } from 'lucide-react';
 import { AdBanner } from '../../components/common/AdBanner';
 
 export function AboutPage() {
   return (
     <div className="min-h-screen bg-slate-50 py-12">
-      <SEOHead
-        title="About PicShrink - Our Mission for Free Private Image Tools"
-        description="Learn about PicShrink's mission: delivering 100% free, client-side, privacy-first online image tools with zero server uploads and zero watermarks."
-        path="/about"
-      />
+      <SEOHead {...PAGE_META['/about']} />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}

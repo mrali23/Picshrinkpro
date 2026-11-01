@@ -1,15 +1,12 @@
 import { SEOHead } from '../../components/common/SEOHead';
+import { PAGE_META } from '../../data/pagesMeta';
 import { ShieldAlert, Lock, CheckCircle } from 'lucide-react';
 import { AdBanner } from '../../components/common/AdBanner';
 
 export function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-slate-50 py-12">
-      <SEOHead
-        title="Privacy Policy - PicShrink Browser-Based Image Processing"
-        description="PicShrink processes image inputs in your browser. The AI runtime and model may be downloaded from third-party hosts; the selected image itself is processed locally."
-        path="/privacy-policy"
-      />
+      <SEOHead {...PAGE_META['/privacy-policy']} />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-2xl mx-auto mb-10">

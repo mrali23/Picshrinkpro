@@ -18,6 +18,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { SEOHead } from '../components/common/SEOHead';
+import { PAGE_META } from '../data/pagesMeta';
 import { AdBanner } from '../components/common/AdBanner';
 import { FaqSection } from '../components/common/FaqSection';
 import { HeroInteractiveShowcase } from '../components/home/HeroInteractiveShowcase';
@@ -61,11 +62,7 @@ const homeFaqs = [
 export function HomePage() {
   return (
     <div className="min-h-screen bg-slate-50">
-      <SEOHead
-        title="PicShrink - Free Online Image Tools - Compress, Convert & Edit"
-        description="Free online image tools to compress, remove background, resize, crop, convert JPG PNG WebP and image to PDF. 100% free, no watermark, browser-based private."
-        path="/"
-      />
+      <SEOHead {...PAGE_META['/']} />
 
       {/* Hero Section */}
       <section className="relative overflow-hidden pt-12 pb-16 lg:pt-20 lg:pb-24 bg-gradient-to-b from-white to-slate-50 border-b border-slate-200/60">

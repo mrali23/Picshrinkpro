@@ -12,6 +12,10 @@ export const BLOG_POSTS: BlogPost[] = [
     category: 'Optimization',
     tags: ['Image Compression', 'Web Performance', 'SEO', 'File Size'],
     image: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=1200&q=80',
+    references: [
+      { title: 'Learn Images', source: 'web.dev', url: 'https://web.dev/learn/images' },
+      { title: 'Image file type and format guide', source: 'MDN Web Docs', url: 'https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/Image_types' },
+    ],
     content: {
       lead: 'High-resolution images are the lifeblood of compelling digital experiences, yet oversized images are the primary cause of sluggish page loading times, high bounce rates, and poor Core Web Vitals scores. The good news? You can compress your photos by 70% to 85% without sacrificing noticeable visual quality.',
       sections: [
@@ -81,6 +85,9 @@ export const BLOG_POSTS: BlogPost[] = [
     category: 'Editing',
     tags: ['Background Removal', 'Graphic Design', 'E-commerce', 'Transparent PNG'],
     image: 'https://images.unsplash.com/photo-1542744094-3a31f272c490?auto=format&fit=crop&w=1200&q=80',
+    references: [
+      { title: 'Image file type and format guide', source: 'MDN Web Docs', url: 'https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/Image_types' },
+    ],
     content: {
       lead: 'Whether you are creating clean e-commerce product listings for Amazon and Shopify, crafting professional LinkedIn headshots, or making YouTube thumbnails, removing distracting backgrounds is an essential skill.',
       sections: [
@@ -123,6 +130,10 @@ export const BLOG_POSTS: BlogPost[] = [
     category: 'Guide',
     tags: ['Image Formats', 'JPEG', 'PNG', 'WebP', 'Web Design'],
     image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80',
+    references: [
+      { title: 'Image file type and format guide', source: 'MDN Web Docs', url: 'https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/Image_types' },
+      { title: 'WebP: an image format for the web', source: 'Google for Developers', url: 'https://developers.google.com/speed/webp' },
+    ],
     content: {
       lead: 'Choosing the wrong image format can bloat your web page weight by megabytes, leading to sluggish load speeds and lower Google search rankings. Here is how JPG, PNG, and WebP stack up in 2026.',
       sections: [
@@ -221,6 +232,9 @@ export const BLOG_POSTS: BlogPost[] = [
     category: 'Productivity',
     tags: ['Blogging', 'Content Creation', 'Free Tools', 'Productivity'],
     image: 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?auto=format&fit=crop&w=1200&q=80',
+    references: [
+      { title: 'Learn Images', source: 'web.dev', url: 'https://web.dev/learn/images' },
+    ],
     content: {
       lead: 'Running a high-traffic blog requires producing dozens of custom graphics, screenshots, and featured images every single week. Expensive desktop software like Photoshop can be overkill for quick web formatting. Here are the indispensable free browser tools every content creator should bookmark.',
       sections: [
@@ -291,6 +305,10 @@ export const BLOG_POSTS: BlogPost[] = [
     category: 'SEO & Speed',
     tags: ['Website Speed', 'Core Web Vitals', 'LCP', 'SEO Optimization'],
     image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1200&q=80',
+    references: [
+      { title: 'Largest Contentful Paint (LCP)', source: 'web.dev', url: 'https://web.dev/articles/lcp' },
+      { title: 'Learn Images', source: 'web.dev', url: 'https://web.dev/learn/images' },
+    ],
     content: {
       lead: 'According to HTTP Archive metrics, images account for over 50% of the total transfer weight of an average web page. Slow load times directly hurt conversions: a 1-second delay in page response can result in a 7% reduction in e-commerce conversions.',
       sections: [

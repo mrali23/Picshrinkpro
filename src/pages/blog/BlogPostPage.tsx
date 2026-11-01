@@ -1,15 +1,17 @@
-import { useParams, Link, Navigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { Calendar, Clock, User, ArrowLeft, ArrowRight, Share2, Sparkles, CheckCircle2 } from 'lucide-react';
 import { SEOHead } from '../../components/common/SEOHead';
 import { AdBanner } from '../../components/common/AdBanner';
 import { BLOG_POSTS } from '../../data/blogData';
+import { SITE_URL } from '../../data/siteConfig';
+import { NotFoundPage } from '../NotFoundPage';
 
 export function BlogPostPage() {
   const { slug } = useParams<{ slug: string }>();
   const post = BLOG_POSTS.find((p) => p.slug === slug);
 
   if (!post) {
-    return <Navigate to="/blog" replace />;
+    return <NotFoundPage />;
   }
 
   // Schema.org BlogPosting
@@ -24,19 +26,19 @@ export function BlogPostPage() {
     author: {
       '@type': 'Organization',
       name: post.author,
-      url: '/about',
+      url: `${SITE_URL}/about`,
     },
     publisher: {
       '@type': 'Organization',
       name: 'PicShrink',
       logo: {
         '@type': 'ImageObject',
-        url: '/favicon.svg',
+        url: `${SITE_URL}/favicon.svg`,
       },
     },
     mainEntityOfPage: {
       '@type': 'WebPage',
-      '@id': post.path,
+      '@id': `${SITE_URL}${post.path}`,
     },
   };
 
@@ -181,6 +183,30 @@ export function BlogPostPage() {
               )}
             </section>
           ))}
+
+          {/* Further reading: outbound references to authoritative sources */}
+          {post.references && post.references.length > 0 && (
+            <section aria-labelledby="further-reading-heading" className="pt-6 border-t border-slate-100">
+              <h2 id="further-reading-heading" className="text-xl font-extrabold text-slate-900">
+                Further reading
+              </h2>
+              <ul className="mt-3 space-y-2 text-base">
+                {post.references.map((ref) => (
+                  <li key={ref.url}>
+                    <a
+                      href={ref.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
+                    >
+                      {ref.title}
+                    </a>
+                    <span className="text-slate-500"> ({ref.source})</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {/* Tags */}
           <div className="pt-6 border-t border-slate-100 flex flex-wrap items-center gap-2">

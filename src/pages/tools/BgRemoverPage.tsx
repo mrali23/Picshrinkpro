@@ -4,6 +4,7 @@ import { SEOHead } from '../../components/common/SEOHead';
 import { DropZone } from '../../components/common/DropZone';
 import { AdBanner } from '../../components/common/AdBanner';
 import { FaqSection } from '../../components/common/FaqSection';
+import { RelatedTools } from '../../components/common/RelatedTools';
 import { BeforeAfterSlider } from '../../components/common/BeforeAfterSlider';
 import { BatchQueueManager } from '../../components/common/BatchQueueManager';
 import { SkeletonPreview } from '../../components/common/SkeletonPreview';
@@ -780,6 +781,7 @@ export function BgRemoverPage() {
           title="Background Removal FAQs"
           subtitle="AI segmentation is the default. Color-based methods remain available for simple plain-color backgrounds."
         />
+        <RelatedTools toolId={toolMeta.id} />
       </div>
     </div>
   );

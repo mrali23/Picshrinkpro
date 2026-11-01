@@ -4,6 +4,7 @@ import { SEOHead } from '../../components/common/SEOHead';
 import { DropZone } from '../../components/common/DropZone';
 import { AdBanner } from '../../components/common/AdBanner';
 import { FaqSection } from '../../components/common/FaqSection';
+import { RelatedTools } from '../../components/common/RelatedTools';
 import { BeforeAfterSlider } from '../../components/common/BeforeAfterSlider';
 import { BatchQueueManager } from '../../components/common/BatchQueueManager';
 import { SkeletonPreview } from '../../components/common/SkeletonPreview';
@@ -572,6 +573,7 @@ export function ResizerPage() {
           title="Image Resizing FAQs"
           subtitle="Everything you need to know about resizing images by pixels and percentages."
         />
+        <RelatedTools toolId={toolMeta.id} />
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Mail, Send, CheckCircle2, MessageSquare, Clock, HelpCircle } from 'lucide-react';
 import { SEOHead } from '../../components/common/SEOHead';
+import { PAGE_META } from '../../data/pagesMeta';
 import { AdBanner } from '../../components/common/AdBanner';
 import { Link } from 'react-router-dom';
 
@@ -35,11 +36,7 @@ export function ContactPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 py-12">
-      <SEOHead
-        title="Contact Us - PicShrink Customer Support & Feedback"
-        description="Have questions, feature suggestions, or bug reports about PicShrink? Contact our team directly. We are always eager to assist you."
-        path="/contact"
-      />
+      <SEOHead {...PAGE_META['/contact']} />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-2xl mx-auto mb-10">

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
-import { HelmetProvider } from 'react-helmet-async';
+import { Helmet, HelmetProvider } from 'react-helmet-async';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 
@@ -25,6 +25,9 @@ const ContactPage = lazy(() => import('./pages/legal/ContactPage').then(m => ({ 
 // Blog pages
 const BlogIndexPage = lazy(() => import('./pages/blog/BlogIndexPage').then(m => ({ default: m.BlogIndexPage })));
 const BlogPostPage = lazy(() => import('./pages/blog/BlogPostPage').then(m => ({ default: m.BlogPostPage })));
+
+// Not found
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
 
 // Admin
 const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })));
@@ -85,9 +88,22 @@ export default function App() {
                 element={<Navigate to="/blog/how-to-compress-image-without-losing-quality" replace />}
               />
 
-              {/* Catch-all 404 fallback */}
-              <Route path="/admin" element={<AdminDashboardPage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
+              {/* Admin: never indexed */}
+              <Route
+                path="/admin"
+                element={
+                  <>
+                    <Helmet>
+                      <title>Admin - PicShrink</title>
+                      <meta name="robots" content="noindex, nofollow" />
+                    </Helmet>
+                    <AdminDashboardPage />
+                  </>
+                }
+              />
+
+              {/* Real 404 page (noindex) instead of redirecting unknown URLs to the homepage */}
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
             </Suspense>
           </main>
