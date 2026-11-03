@@ -7,10 +7,6 @@ import {
   Wand2,
   Lock,
   ArrowRight,
-  CheckCircle2,
-  Sliders,
-  Maximize2,
-  ShieldCheck,
 } from 'lucide-react';
 
 interface ShowcaseMode {
@@ -37,11 +33,11 @@ const MODES: ShowcaseMode[] = [
     label: 'Compress',
     icon: Zap,
     tag: 'Smart Compression Engine',
-    // High-res alpine mountain landscape
+    // Optimized Unsplash: smaller width for display size + lower quality for "after"
     beforeImg:
-      'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1000&q=80',
+      'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=75&fm=webp',
     afterImg:
-      'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1000&q=40',
+      'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=40&fm=webp',
     beforeLabel: 'Original RAW (3.8 MB)',
     afterLabel: 'PicShrink WebP (482 KB)',
     beforeStats: '3.8 MB • Uncompressed',
@@ -71,11 +67,10 @@ const MODES: ShowcaseMode[] = [
     label: 'Magic Filter',
     icon: Wand2,
     tag: 'Canvas GPU Shader',
-    // Vibrant neon cityscape
     beforeImg:
-      'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1000&q=80',
+      'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=800&q=75&fm=webp',
     afterImg:
-      'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1000&q=80',
+      'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=800&q=75&fm=webp',
     beforeLabel: 'Original Camera Shot',
     afterLabel: 'Cyberpunk Neon Grade',
     beforeStats: 'Standard Colors',
@@ -91,7 +86,7 @@ const MODES: ShowcaseMode[] = [
 
 export function HeroInteractiveShowcase() {
   const [activeMode, setActiveMode] = useState<'compress' | 'bg' | 'filter'>('compress');
-  const [sliderPosition, setSliderPosition] = useState<number>(50); // percentage (0 to 100)
+  const [sliderPosition, setSliderPosition] = useState<number>(50);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -128,12 +123,9 @@ export function HeroInteractiveShowcase() {
 
   return (
     <div className="relative w-full max-w-lg mx-auto select-none">
-      {/* Ambient background glow */}
       <div className="absolute -inset-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-[36px] opacity-25 blur-2xl group-hover:opacity-40 transition duration-1000 -z-10" />
 
-      {/* Main Glass Card */}
       <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-2xl space-y-4">
-        {/* Top Header & Tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2.5 w-2.5">
@@ -145,7 +137,6 @@ export function HeroInteractiveShowcase() {
             </span>
           </div>
 
-          {/* Mode Switcher */}
           <div className="flex items-center bg-slate-100 p-1 rounded-xl">
             {MODES.map((m) => {
               const Icon = m.icon;
@@ -172,7 +163,6 @@ export function HeroInteractiveShowcase() {
           </div>
         </div>
 
-        {/* Interactive Comparison Viewport */}
         <div
           ref={containerRef}
           onPointerDown={handlePointerDown}
@@ -187,10 +177,9 @@ export function HeroInteractiveShowcase() {
           className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden cursor-ew-resize bg-slate-900 shadow-inner group focus:outline-none focus:ring-2 focus:ring-blue-500"
           title="Drag slider or click anywhere to compare Before and After"
         >
-          {/* BASE LAYER: AFTER (Processed) */}
+          {/* BASE LAYER: AFTER */}
           <div className="absolute inset-0 w-full h-full">
             {current.isCutout ? (
-              // BG Remover with Checkerboard transparency
               <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
                 <div
                   className="absolute inset-0 w-full h-full"
@@ -204,22 +193,28 @@ export function HeroInteractiveShowcase() {
                 <img
                   src={current.afterImg}
                   alt={current.afterLabel}
+                  width={800}
+                  height={600}
                   decoding="async"
+                  loading="eager"
+                  fetchPriority="high"
                   className="w-full h-full object-contain p-6 relative z-10 drop-shadow-2xl select-none"
                 />
               </div>
             ) : (
-              // Normal or Filtered image
               <img
                 src={current.afterImg}
                 alt={current.afterLabel}
+                width={800}
+                height={600}
                 decoding="async"
+                loading="eager"
+                fetchPriority="high"
                 className="w-full h-full object-cover select-none"
                 style={current.filterStyle}
               />
             )}
 
-            {/* Top Right "After" Badge */}
             <div className="absolute top-3 right-3 z-10">
               <span className="px-2.5 py-1 rounded-full bg-blue-600/90 backdrop-blur-md text-white text-[10px] font-black shadow-lg flex items-center gap-1">
                 <Sparkles className="w-3 h-3 text-amber-300" />
@@ -228,7 +223,7 @@ export function HeroInteractiveShowcase() {
             </div>
           </div>
 
-          {/* TOP LAYER: BEFORE (Original) - Clipped smoothly */}
+          {/* TOP LAYER: BEFORE */}
           <div
             className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden"
             style={{
@@ -236,13 +231,15 @@ export function HeroInteractiveShowcase() {
             }}
           >
             {current.isCutout ? (
-              // BG Remover: Product with Studio Backdrop
               <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(99,102,241,0.3),transparent_65%)]" />
                 <div className="absolute bottom-0 inset-x-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent" />
                 <img
                   src={current.beforeImg}
                   alt={current.beforeLabel}
+                  width={800}
+                  height={600}
+                  decoding="async"
                   className="w-full h-full object-contain p-6 relative z-10 drop-shadow-2xl select-none"
                 />
               </div>
@@ -250,11 +247,13 @@ export function HeroInteractiveShowcase() {
               <img
                 src={current.beforeImg}
                 alt={current.beforeLabel}
+                width={800}
+                height={600}
+                decoding="async"
                 className="w-full h-full object-cover select-none"
               />
             )}
 
-            {/* Top Left "Before" Badge */}
             <div className="absolute top-3 left-3 z-10">
               <span className="px-2.5 py-1 rounded-full bg-slate-900/85 backdrop-blur-md text-white text-[10px] font-black shadow-lg border border-slate-700/60">
                 {current.beforeLabel}
@@ -262,7 +261,6 @@ export function HeroInteractiveShowcase() {
             </div>
           </div>
 
-          {/* Draggable Divider Line & Knob */}
           <div
             className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_10px_rgba(0,0,0,0.6)] z-20 pointer-events-none"
             style={{ left: `${sliderPosition}%` }}
@@ -275,7 +273,6 @@ export function HeroInteractiveShowcase() {
             </div>
           </div>
 
-          {/* Interactive Hint Bar */}
           <div className="absolute bottom-3 inset-x-0 mx-auto w-fit z-10 px-3.5 py-1 rounded-full bg-slate-950/75 backdrop-blur-md border border-white/10 text-[10px] font-semibold text-white/90 shadow-md pointer-events-none flex items-center gap-2">
             <span>Drag slider to compare</span>
             <span className="text-blue-400 font-bold">•</span>
@@ -283,7 +280,6 @@ export function HeroInteractiveShowcase() {
           </div>
         </div>
 
-        {/* Live Metrics Grid */}
         <div className="grid grid-cols-2 gap-2 text-center text-xs">
           <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
             <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">
@@ -304,7 +300,6 @@ export function HeroInteractiveShowcase() {
           </div>
         </div>
 
-        {/* Security & Client-Side Verification */}
         <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-1">
           <div className="flex items-center gap-1 font-medium">
             <Lock className="w-3.5 h-3.5 text-emerald-600" />
@@ -316,7 +311,6 @@ export function HeroInteractiveShowcase() {
           </div>
         </div>
 
-        {/* Primary Action Button */}
         <Link
           to={current.toolPath}
           className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs sm:text-sm rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer group"
