@@ -1,11 +1,11 @@
 # Content signals
 
-This site publishes explicit AI content preferences in `robots.txt` using the `Content-Signal` directive.
-
-Example:
+This site publishes its AI content preferences in `robots.txt` using the `Content-Signal` directive:
 
 ```text
-Content-Signal: ai-train=no, search=yes, ai-input=no
+Content-Signal: search=yes, ai-input=yes, ai-train=no
 ```
 
-These directives signal how automated agents should interpret the site for search indexing, model training, and input collection activities.
+- `search=yes`: pages may be indexed and shown in search results.
+- `ai-input=yes`: pages may be used as input for AI answers, with attribution to https://picshrinkpro.com.
+- `ai-train=no`: pages may not be used to train AI models.

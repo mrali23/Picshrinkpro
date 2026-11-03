@@ -1,0 +1,6 @@
+# Copy to .dev.vars for local development. Never commit .dev.vars.
+# In production set these with: wrangler secret put <NAME>
+ADMIN_USERNAME=choose-a-username
+ADMIN_PASSWORD=choose-a-long-random-password
+# At least 32 random characters, e.g. `openssl rand -hex 32`
+SESSION_SECRET=

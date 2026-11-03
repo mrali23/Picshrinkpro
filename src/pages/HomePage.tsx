@@ -22,6 +22,40 @@ import { AdBanner } from '../components/common/AdBanner';
 import { FaqSection } from '../components/common/FaqSection';
 import { HeroInteractiveShowcase } from '../components/home/HeroInteractiveShowcase';
 import { TOOLS_DATA } from '../data/toolsData';
+import { LOGO_URL, SITE_NAME, SITE_URL, absoluteUrl } from '../config/site';
+
+const homeDescription =
+  'Free online image tools to compress, remove background, resize, crop, convert JPG PNG WebP and image to PDF. 100% free, no watermark, browser-based private.';
+
+const homeSchema = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: SITE_NAME,
+    url: `${SITE_URL}/`,
+    description: homeDescription,
+    inLanguage: 'en',
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: SITE_NAME,
+    url: `${SITE_URL}/`,
+    logo: absoluteUrl(LOGO_URL),
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: SITE_NAME,
+    url: `${SITE_URL}/`,
+    description: homeDescription,
+    applicationCategory: 'MultimediaApplication',
+    operatingSystem: 'Any',
+    browserRequirements: 'Requires JavaScript',
+    isAccessibleForFree: true,
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  },
+];
 
 const iconMap: Record<string, any> = {
   Minimize2,
@@ -62,9 +96,10 @@ export function HomePage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <SEOHead
-        title="PicShrink - Free Online Image Tools - Compress, Convert & Edit"
-        description="Free online image tools to compress, remove background, resize, crop, convert JPG PNG WebP and image to PDF. 100% free, no watermark, browser-based private."
+        title="PicShrink - Free Online Image Tools: Compress & Convert"
+        description={homeDescription}
         path="/"
+        schema={homeSchema}
       />
 
       {/* Hero Section */}

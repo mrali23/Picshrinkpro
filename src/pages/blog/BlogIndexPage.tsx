@@ -90,6 +90,10 @@ export function BlogIndexPage() {
                   <img
                     src={featuredPost.image}
                     alt={featuredPost.title}
+                    width={1200}
+                    height={630}
+                    fetchPriority="high"
+                    decoding="async"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-90"
                   />
                   <div className="absolute top-4 left-4">
@@ -148,6 +152,10 @@ export function BlogIndexPage() {
                 <img
                   src={post.image}
                   alt={post.title}
+                  width={1200}
+                  height={630}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-90"
                 />
                 <span className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/90 backdrop-blur-md text-slate-800 shadow-xs">

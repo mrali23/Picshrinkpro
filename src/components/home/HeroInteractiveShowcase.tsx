@@ -55,8 +55,8 @@ const MODES: ShowcaseMode[] = [
     label: 'Remove BG',
     icon: Scissors,
     tag: 'E-Commerce & Product Cutouts',
-    beforeImg: '/assets/headphones_cutout.png',
-    afterImg: '/assets/headphones_cutout.png',
+    beforeImg: '/assets/headphones_cutout.webp',
+    afterImg: '/assets/headphones_cutout.webp',
     beforeLabel: 'With Studio Backdrop',
     afterLabel: 'Clean Cutout (PNG)',
     beforeStats: 'Studio Background',
@@ -204,6 +204,7 @@ export function HeroInteractiveShowcase() {
                 <img
                   src={current.afterImg}
                   alt={current.afterLabel}
+                  decoding="async"
                   className="w-full h-full object-contain p-6 relative z-10 drop-shadow-2xl select-none"
                 />
               </div>
@@ -212,6 +213,7 @@ export function HeroInteractiveShowcase() {
               <img
                 src={current.afterImg}
                 alt={current.afterLabel}
+                decoding="async"
                 className="w-full h-full object-cover select-none"
                 style={current.filterStyle}
               />

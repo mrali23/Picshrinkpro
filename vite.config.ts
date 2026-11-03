@@ -34,14 +34,18 @@ class LocalMemoryStorage {
 function localWorkerApi(): Plugin {
   const varsPath = path.resolve(process.cwd(), '.dev.vars');
   const vars = existsSync(varsPath) ? parse(readFileSync(varsPath)) : {};
-  const data = new AdminData({ storage: new LocalMemoryStorage() });
+  const secrets = {
+    ADMIN_USERNAME: process.env.ADMIN_USERNAME || vars.ADMIN_USERNAME,
+    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || vars.ADMIN_PASSWORD,
+    SESSION_SECRET: process.env.SESSION_SECRET || vars.SESSION_SECRET,
+  };
+  // Same shape Cloudflare uses: new AdminData(ctx, env)
+  const data = new AdminData({ storage: new LocalMemoryStorage() }, secrets);
   const stub = { fetch: (request: Request) => data.fetch(request) };
   const env = {
     ASSETS: { fetch: async () => new Response('Not found.', { status: 404 }) },
     ADMIN_DATA: { idFromName: () => 'local', get: () => stub },
-    ADMIN_USERNAME: process.env.ADMIN_USERNAME || vars.ADMIN_USERNAME,
-    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || vars.ADMIN_PASSWORD,
-    SESSION_SECRET: process.env.SESSION_SECRET || vars.SESSION_SECRET,
+    ...secrets,
   };
 
   return {
@@ -96,6 +100,9 @@ function localWorkerApi(): Plugin {
 export default defineConfig(({ command }) => {
   return {
     plugins: [react(), tailwindcss(), ...(command === 'serve' ? [localWorkerApi()] : [])],
+    // The build-time prerender (`vite build --ssr`) bundles dependencies so CommonJS-only
+    // packages such as file-saver work when the server entry is loaded by Node.
+    ssr: { noExternal: true },
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname ?? '.', '.'),
