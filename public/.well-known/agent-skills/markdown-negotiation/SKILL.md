@@ -1,20 +1,20 @@
 # Markdown negotiation support
 
-This site supports content negotiation for agent clients and other automated tools.
+Every public page has a compact Markdown version generated at build time.
 
-When a client sends `Accept: text/markdown` or `Accept: text/x-markdown`, the server returns a compact Markdown representation of the requested page instead of the browser-heavy HTML view.
-
-Use the normal site routes, but request Markdown via the HTTP `Accept` header when your client is an agent or scanner.
+Request it with the `Accept: text/markdown` header, or by adding `?format=markdown` to the page URL.
+Browsers keep receiving HTML.
 
 ## Example
 
 ```http
-GET / HTTP/1.1
+GET /compressor HTTP/1.1
+Host: picshrinkpro.com
 Accept: text/markdown
 ```
 
 ## Notes
 
-- HTML remains the default for browsers.
-- Markdown output is designed for agent consumption and formatted content extraction.
-- These responses are intentionally compact and easier to parse than full webpage DOM output.
+- The response has `Content-Type: text/markdown` and `Vary: Accept`.
+- It starts with front matter (`title`, `description`, `url`), followed by the page's headings, paragraphs and lists.
+- Pages without a Markdown version (for example `/admin`) return HTML.

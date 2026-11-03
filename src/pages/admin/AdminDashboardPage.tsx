@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { Activity, BarChart3, Check, Eye, EyeOff, LogOut, Save, Settings, ShieldCheck, Users } from 'lucide-react';
 import { analytics, type AnalyticsEvent } from '../../utils/analytics';
 import { DEFAULT_SITE_SETTINGS, type SiteSettings } from '../../utils/siteSettings';
@@ -29,7 +30,7 @@ function formatTime(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(timestamp);
 }
 
-export function AdminDashboardPage() {
+function AdminDashboardContent() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -302,5 +303,17 @@ export function AdminDashboardPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export function AdminDashboardPage() {
+  return (
+    <>
+      <Helmet>
+        <title>Admin | PicShrink</title>
+        <meta name="robots" content="noindex, nofollow" />
+      </Helmet>
+      <AdminDashboardContent />
+    </>
   );
 }

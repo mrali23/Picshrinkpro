@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-route
 import { HelmetProvider } from 'react-helmet-async';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
+import { NotFoundPage } from './pages/NotFoundPage';
 
 // Route-level lazy loading keeps image-processing dependencies out of the initial page bundle.
 const HomePage = lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })));
@@ -46,10 +47,10 @@ function RouteTracker() {
   return null;
 }
 
-export default function App() {
+/** Routes and layout without a router, so the same tree is used by the browser and by the build-time prerender. */
+export function AppRoutes() {
   return (
-    <HelmetProvider>
-      <BrowserRouter>
+    <>
         <RouteTracker />
         <div className="flex flex-col min-h-screen bg-slate-50 text-slate-800">
           <Navbar />
@@ -85,14 +86,24 @@ export default function App() {
                 element={<Navigate to="/blog/how-to-compress-image-without-losing-quality" replace />}
               />
 
-              {/* Catch-all 404 fallback */}
               <Route path="/admin" element={<AdminDashboardPage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
+
+              {/* Unknown URLs: real 404 page (noindex). The server answers these with HTTP 404 via dist/404.html. */}
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
             </Suspense>
           </main>
           <Footer />
         </div>
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <HelmetProvider>
+      <BrowserRouter>
+        <AppRoutes />
       </BrowserRouter>
     </HelmetProvider>
   );

@@ -56,6 +56,10 @@ export function AdBanner({ type, className = '' }: AdBannerProps) {
     );
   }
 
+  // Never show an empty "Advertisement" box to real visitors, crawlers or AdSense reviewers.
+  // The placeholder is only useful while developing locally.
+  if (!import.meta.env.DEV) return null;
+
   const dimensions = type === 'sidebar' ? 'h-[250px] max-w-[300px]' : 'h-[90px] max-w-[728px]';
   return (
     <div className={`mx-auto my-6 w-full ${dimensions} ${className}`}>

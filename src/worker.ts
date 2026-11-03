@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 export interface SiteSettings {
   siteName: string;
@@ -31,11 +31,32 @@ interface StorageLike {
   transaction<T>(callback: (transaction: StorageLike) => Promise<T>): Promise<T>;
 }
 
+/** Secrets that must be configured as Worker secrets (or in .dev.vars locally). */
+export interface AdminSecrets {
+  ADMIN_USERNAME?: string;
+  ADMIN_PASSWORD?: string;
+  SESSION_SECRET?: string;
+}
+
+const SESSION_COOKIE = 'picshrink_session';
+const SESSION_TTL_SECONDS = 24 * 60 * 60;
+const MIN_SESSION_SECRET_LENGTH = 32;
+const MAX_LOGIN_FAILURES = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const ALLOWED_EVENT_TYPES = new Set(['pageview', 'tool_run']);
+
 export class AdminData {
   private readonly storage: StorageLike;
+  private readonly secrets: AdminSecrets;
+  private readonly loginFailures = new Map<string, { count: number; firstAt: number }>();
 
-  constructor({ storage }: { storage: StorageLike }) {
+  /**
+   * Cloudflare constructs Durable Objects as `new AdminData(ctx, env)`, so the
+   * secrets arrive here and never travel on the Request.
+   */
+  constructor({ storage }: { storage: StorageLike }, env: AdminSecrets = {}) {
     this.storage = storage;
+    this.secrets = env ?? {};
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -66,10 +87,7 @@ export class AdminData {
       return this.handleAnalytics(request);
     }
 
-    return new Response(JSON.stringify({ error: 'Not found' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ error: 'Not found' }, 404);
   }
 
   private async handleGetPublicSettings(): Promise<Response> {
@@ -82,25 +100,61 @@ export class AdminData {
     return jsonResponse({ authenticated }, 200);
   }
 
+  private isLoginConfigured(): boolean {
+    const { ADMIN_USERNAME, ADMIN_PASSWORD, SESSION_SECRET } = this.secrets;
+    return Boolean(
+      ADMIN_USERNAME &&
+        ADMIN_PASSWORD &&
+        SESSION_SECRET &&
+        SESSION_SECRET.length >= MIN_SESSION_SECRET_LENGTH,
+    );
+  }
+
   private async handleLogin(request: Request): Promise<Response> {
-    const env = getRequestEnv(request);
-    const body = await readJsonBody<{ username?: string; password?: string }>(request);
-    const username = body?.username;
-    const password = body?.password;
+    if (request.method !== 'POST') {
+      return jsonResponse({ error: 'Method not allowed' }, 405);
+    }
+    if (!isSameOrigin(request)) {
+      return jsonResponse({ error: 'Forbidden' }, 403);
+    }
 
-    const expectedUser = env.ADMIN_USERNAME ?? 'admin';
-    const expectedPassword = env.ADMIN_PASSWORD ?? 'admin';
+    // Fail closed: never fall back to built-in credentials or a built-in secret.
+    if (!this.isLoginConfigured()) {
+      return jsonResponse({ error: 'Admin login is not configured.' }, 503);
+    }
 
-    if (username !== expectedUser || password !== expectedPassword) {
+    const clientKey = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+    const now = Date.now();
+    const record = this.loginFailures.get(clientKey);
+    if (record && now - record.firstAt < LOGIN_WINDOW_MS && record.count >= MAX_LOGIN_FAILURES) {
+      return jsonResponse({ error: 'Too many login attempts. Try again later.' }, 429);
+    }
+
+    const body = await readJsonBody<{ username?: unknown; password?: unknown }>(request);
+    const username = typeof body?.username === 'string' ? body.username : '';
+    const password = typeof body?.password === 'string' ? body.password : '';
+
+    // Evaluate both comparisons so timing does not reveal which one failed.
+    const userOk = safeEqual(username, this.secrets.ADMIN_USERNAME as string);
+    const passOk = safeEqual(password, this.secrets.ADMIN_PASSWORD as string);
+
+    if (!(userOk && passOk)) {
+      if (!record || now - record.firstAt >= LOGIN_WINDOW_MS) {
+        this.loginFailures.set(clientKey, { count: 1, firstAt: now });
+      } else {
+        record.count += 1;
+      }
       return jsonResponse({ error: 'Invalid login credentials' }, 401);
     }
 
-    const sessionToken = createSessionToken(username, env.SESSION_SECRET ?? 'local-development-secret');
+    this.loginFailures.delete(clientKey);
+    const sessionToken = createSessionToken(username, this.secrets.SESSION_SECRET as string);
     return new Response(JSON.stringify({ authenticated: true }), {
       status: 200,
       headers: {
-        'Content-Type': 'application/json',
-        'Set-Cookie': `picshrink_session=${encodeURIComponent(sessionToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`,
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Set-Cookie': `${SESSION_COOKIE}=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_TTL_SECONDS}`,
       },
     });
   }
@@ -117,15 +171,11 @@ export class AdminData {
     }
 
     if (request.method === 'POST') {
-      const body = await readJsonBody<Partial<SiteSettings>>(request);
-      const nextSettings = {
-        ...DEFAULT_SITE_SETTINGS,
-        ...(body ?? {}),
-        adSlots: {
-          ...DEFAULT_SITE_SETTINGS.adSlots,
-          ...(body?.adSlots ?? {}),
-        },
-      } satisfies SiteSettings;
+      if (!isSameOrigin(request)) {
+        return jsonResponse({ error: 'Forbidden' }, 403);
+      }
+      const body = await readJsonBody<unknown>(request);
+      const nextSettings = sanitizeSettings(body);
       await this.saveSettings(nextSettings);
       return jsonResponse(nextSettings, 200);
     }
@@ -168,10 +218,22 @@ export class AdminData {
   }
 
   private async handleTrack(request: Request): Promise<Response> {
-    const body = await readJsonBody<{ type?: string; path?: string; visitorId?: string }>(request);
-    const type = body?.type ?? 'pageview';
-    const path = body?.path ?? '/';
-    const visitorId = body?.visitorId ?? 'anonymous';
+    if (request.method !== 'POST') {
+      return jsonResponse({ error: 'Method not allowed' }, 405);
+    }
+    if (!isSameOrigin(request)) {
+      return jsonResponse({ error: 'Forbidden' }, 403);
+    }
+
+    const body = await readJsonBody<{ type?: unknown; path?: unknown; visitorId?: unknown }>(request);
+    const type = typeof body?.type === 'string' ? body.type : 'pageview';
+    const path = typeof body?.path === 'string' ? body.path : '/';
+    const visitorId = typeof body?.visitorId === 'string' ? body.visitorId : 'anonymous';
+
+    // Public, unauthenticated endpoint: only accept well-formed, bounded events.
+    if (!ALLOWED_EVENT_TYPES.has(type) || !path.startsWith('/') || path.length > 200 || visitorId.length > 64) {
+      return jsonResponse({ error: 'Invalid event' }, 400);
+    }
 
     const state = await this.getState();
     state.events.push({ type, path, visitorId, timestamp: Date.now() });
@@ -205,29 +267,23 @@ export class AdminData {
   }
 
   private getSessionUser(request: Request): string | undefined {
+    const secret = this.secrets.SESSION_SECRET;
+    if (!this.isLoginConfigured() || !secret) return undefined;
+
     const cookieValue = request.headers.get('Cookie') ?? '';
-    const match = cookieValue.match(/(?:^|;\s*)picshrink_session=([^;]+)/);
+    const match = cookieValue.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
     if (!match) return undefined;
 
-    const token = decodeURIComponent(match[1]);
-    const [hash, payload] = token.split('.');
-    if (!hash || !payload) return undefined;
-
-    const secret = getRequestEnv(request).SESSION_SECRET ?? 'local-development-secret';
-    const expected = createHmac('sha256', secret).update(payload).digest('hex');
-    return expected === hash ? payload : undefined;
+    return verifySessionToken(match[1], secret);
   }
 }
 
-export interface Env {
+export interface Env extends AdminSecrets {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
   ADMIN_DATA: {
     idFromName: (name: string) => string;
     get: (id: string) => { fetch: (request: Request) => Promise<Response> };
   };
-  ADMIN_USERNAME?: string;
-  ADMIN_PASSWORD?: string;
-  SESSION_SECRET?: string;
 }
 
 export function adminApi(request: Request, env: Env): Promise<Response> {
@@ -235,16 +291,31 @@ export function adminApi(request: Request, env: Env): Promise<Response> {
   return env.ADMIN_DATA.get(durableId).fetch(request);
 }
 
-export function markdownForRequest(request: Request): Response | undefined {
+/**
+ * Serves the prerendered Markdown twin of a page (generated at build time) when
+ * an agent asks for `Accept: text/markdown` or `?format=markdown`.
+ * Returns undefined when the request is not a Markdown request or no twin exists.
+ */
+export async function markdownForRequest(request: Request, env: Pick<Env, 'ASSETS'>): Promise<Response | undefined> {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return undefined;
+
   const accept = request.headers.get('Accept') ?? '';
   const url = new URL(request.url);
-  if (accept.includes('text/markdown') || url.searchParams.get('format') === 'markdown') {
-    return new Response('# PicShrink\n\nBrowser-based image tools.', {
-      status: 200,
-      headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
-    });
-  }
-  return undefined;
+  const wantsMarkdown = accept.includes('text/markdown') || url.searchParams.get('format') === 'markdown';
+  if (!wantsMarkdown) return undefined;
+
+  const cleanPath = url.pathname.replace(/\/+$/, '') || '/index';
+  const markdownPath = `${cleanPath === '/' ? '/index' : cleanPath}.md`;
+  const assetResponse = await env.ASSETS.fetch(new Request(new URL(markdownPath, url).toString(), { method: 'GET' }));
+  if (!assetResponse.ok) return undefined;
+
+  return new Response(request.method === 'HEAD' ? null : assetResponse.body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/markdown; charset=utf-8',
+      Vary: 'Accept',
+    },
+  });
 }
 
 const DEFAULT_SITE_SETTINGS: SiteSettings = {
@@ -255,6 +326,28 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   adsensePublisherId: '',
   adSlots: { top: '', sidebar: '', bottom: '' },
 };
+
+function clampString(value: unknown, fallback: string, maxLength = 300): string {
+  return typeof value === 'string' ? value.slice(0, maxLength) : fallback;
+}
+
+/** Whitelist known settings keys and types instead of spreading the request body. */
+function sanitizeSettings(input: unknown): SiteSettings {
+  const body = (input && typeof input === 'object' ? input : {}) as Partial<Record<keyof SiteSettings, unknown>>;
+  const slots = (body.adSlots && typeof body.adSlots === 'object' ? body.adSlots : {}) as Record<string, unknown>;
+  return {
+    siteName: clampString(body.siteName, DEFAULT_SITE_SETTINGS.siteName, 100),
+    siteDescription: clampString(body.siteDescription, DEFAULT_SITE_SETTINGS.siteDescription, 300),
+    gaMeasurementId: clampString(body.gaMeasurementId, '', 40),
+    adsEnabled: typeof body.adsEnabled === 'boolean' ? body.adsEnabled : DEFAULT_SITE_SETTINGS.adsEnabled,
+    adsensePublisherId: clampString(body.adsensePublisherId, '', 60),
+    adSlots: {
+      top: clampString(slots.top, '', 40),
+      sidebar: clampString(slots.sidebar, '', 40),
+      bottom: clampString(slots.bottom, '', 40),
+    },
+  };
+}
 
 function readJsonBody<T>(request: Request): Promise<T | undefined> {
   if (request.method === 'GET' || request.method === 'HEAD') {
@@ -270,23 +363,53 @@ function readJsonBody<T>(request: Request): Promise<T | undefined> {
 function jsonResponse(data: unknown, status: number): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
   });
 }
 
-function createSessionToken(username: string, secret: string): string {
-  return `${createHmac('sha256', secret).update(username).digest('hex')}.${username}`;
+/** Rejects cross-site writes. A missing Origin header (same-origin tools, tests) is allowed. */
+function isSameOrigin(request: Request): boolean {
+  const origin = request.headers.get('Origin');
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === new URL(request.url).host;
+  } catch {
+    return false;
+  }
 }
 
-function getRequestEnv(request: Request): Env {
-  const env = (request as Request & { env?: Env }).env;
-  return env ?? {
-    ASSETS: { fetch: async () => new Response('not found', { status: 404 }) },
-    ADMIN_DATA: {
-      idFromName: () => 'global',
-      get: () => ({ fetch: async () => new Response('not found', { status: 404 }) }),
-    },
-  };
+/** Constant-time string comparison (hashing first so lengths always match). */
+function safeEqual(a: string, b: string): boolean {
+  const left = createHash('sha256').update(a).digest();
+  const right = createHash('sha256').update(b).digest();
+  return timingSafeEqual(left, right);
+}
+
+function toBase64Url(value: string): string {
+  return Buffer.from(value, 'utf8').toString('base64url');
+}
+
+function sign(payload: string, secret: string): string {
+  return createHmac('sha256', secret).update(payload).digest('base64url');
+}
+
+function createSessionToken(username: string, secret: string): string {
+  const payload = toBase64Url(JSON.stringify({ u: username, exp: Date.now() + SESSION_TTL_SECONDS * 1000 }));
+  return `${payload}.${sign(payload, secret)}`;
+}
+
+function verifySessionToken(token: string, secret: string): string | undefined {
+  const [payload, signature, extra] = token.split('.');
+  if (!payload || !signature || extra !== undefined) return undefined;
+  if (!safeEqual(signature, sign(payload, secret))) return undefined;
+
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { u?: unknown; exp?: unknown };
+    if (typeof data.u !== 'string' || typeof data.exp !== 'number' || data.exp < Date.now()) return undefined;
+    return data.u;
+  } catch {
+    return undefined;
+  }
 }
 
 function toToolCounts(paths: string[]): Array<{ name: string; count: number }> {
@@ -304,10 +427,10 @@ function toToolCounts(paths: string[]): Array<{ name: string; count: number }> {
 
 const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const path = new URL(request.url).pathname;
-    if (path.startsWith('/api/')) return adminApi(request, env);
+    const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/')) return adminApi(request, env);
 
-    const markdownResponse = markdownForRequest(request);
+    const markdownResponse = await markdownForRequest(request, env);
     if (markdownResponse) return markdownResponse;
 
     const response = await env.ASSETS.fetch(request);
@@ -316,6 +439,8 @@ const worker = {
     headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
     headers.set('X-Frame-Options', 'DENY');
     headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    if (url.pathname === '/admin') headers.set('X-Robots-Tag', 'noindex, nofollow');
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,

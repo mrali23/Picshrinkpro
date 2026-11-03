@@ -1,15 +1,17 @@
-import { useParams, Link, Navigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { Calendar, Clock, User, ArrowLeft, ArrowRight, Share2, Sparkles, CheckCircle2 } from 'lucide-react';
 import { SEOHead } from '../../components/common/SEOHead';
 import { AdBanner } from '../../components/common/AdBanner';
 import { BLOG_POSTS } from '../../data/blogData';
+import { NotFoundPage } from '../NotFoundPage';
+import { LOGO_URL, SITE_NAME, absoluteUrl } from '../../config/site';
 
 export function BlogPostPage() {
   const { slug } = useParams<{ slug: string }>();
   const post = BLOG_POSTS.find((p) => p.slug === slug);
 
   if (!post) {
-    return <Navigate to="/blog" replace />;
+    return <NotFoundPage />;
   }
 
   // Schema.org BlogPosting
@@ -24,19 +26,19 @@ export function BlogPostPage() {
     author: {
       '@type': 'Organization',
       name: post.author,
-      url: '/about',
+      url: absoluteUrl('/about'),
     },
     publisher: {
       '@type': 'Organization',
-      name: 'PicShrink',
+      name: SITE_NAME,
       logo: {
         '@type': 'ImageObject',
-        url: '/favicon.svg',
+        url: absoluteUrl(LOGO_URL),
       },
     },
     mainEntityOfPage: {
       '@type': 'WebPage',
-      '@id': post.path,
+      '@id': absoluteUrl(post.path),
     },
   };
 
@@ -45,7 +47,7 @@ export function BlogPostPage() {
   return (
     <article className="min-h-screen bg-slate-50 py-10">
       <SEOHead
-        title={`${post.title} | PicShrink`}
+        title={post.title}
         description={post.description}
         path={post.path}
         ogType="article"
@@ -54,6 +56,7 @@ export function BlogPostPage() {
         articleData={{
           author: post.author,
           publishedTime: post.date,
+          modifiedTime: post.date,
           tags: post.tags,
         }}
       />
@@ -106,6 +109,10 @@ export function BlogPostPage() {
           <img
             src={post.image}
             alt={post.title}
+            width={1200}
+            height={630}
+            fetchPriority="high"
+            decoding="async"
             className="w-full h-full object-cover max-h-[460px]"
           />
         </div>
