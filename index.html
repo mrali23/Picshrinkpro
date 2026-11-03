@@ -9,9 +9,15 @@
     <!-- Per-page title, description, canonical, Open Graph, Twitter and JSON-LD are injected at build time
          (scripts/prerender.mjs) and kept in sync at runtime by react-helmet-async (SEOHead). -->
 
-    <!-- Cookie consent (loaded once) -->
+    <!-- Preconnect / dns-prefetch for critical third-party origins -->
+    <link rel="preconnect" href="https://images.unsplash.com" crossorigin />
+    <link rel="dns-prefetch" href="https://pagead2.googlesyndication.com" />
+    <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
+    <link rel="dns-prefetch" href="https://cdn.cookiehub.eu" />
+
+    <!-- Cookie consent - deferred, non-blocking -->
     <script src="https://cdn.cookiehub.eu/c2/9ad8b98f.js" defer></script>
-    <script type="text/javascript">
+    <script type="text/javascript" defer>
       document.addEventListener("DOMContentLoaded", function () {
         if (window.cookiehub) window.cookiehub.load({});
       });
@@ -24,13 +30,15 @@
     <!-- Ahrefs Web Analytics -->
     <script src="https://analytics.ahrefs.com/analytics.js" data-key="rz6iLvSCak6xN+IoaDuDlg" async></script>
 
-    <!-- Google tag (gtag.js) -->
+    <!-- Google tag (gtag.js) - async + delayed config so it does not compete with LCP -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-TP5X9WE2N2"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-TP5X9WE2N2');
+      window.addEventListener('load', function() {
+        gtag('js', new Date());
+        gtag('config', 'G-TP5X9WE2N2', { transport_type: 'beacon' });
+      });
     </script>
   </head>
   <body class="bg-slate-50 text-slate-800 antialiased min-h-screen">
