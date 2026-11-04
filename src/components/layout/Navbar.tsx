@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { TOOLS_DATA } from '../../data/toolsData';
 import { usePublicSiteSettings } from '../../utils/siteSettings';
+import { LogoMark } from '../common/Logo';
 
 const iconMap: Record<string, any> = {
   Minimize2,
@@ -60,20 +61,11 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform duration-200">
-              <svg
-                className="w-5 h-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M4 14h6m-6 0v-6m0 6l7-7" />
-                <path d="M20 10h-6m6 0v6m0-6l-7 7" />
-              </svg>
-            </div>
+            <LogoMark
+              size={40}
+              title=""
+              className="shrink-0 rounded-xl shadow-md shadow-blue-500/25 group-hover:scale-105 transition-transform duration-200"
+            />
             <div className="flex flex-col">
               <span className="text-xl font-black tracking-tight text-slate-900 group-hover:text-blue-600 transition-colors">
                 {siteName}

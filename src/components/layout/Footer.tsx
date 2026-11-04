@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ShieldCheck, Lock } from 'lucide-react';
 import { TOOLS_DATA } from '../../data/toolsData';
 import { usePublicSiteSettings } from '../../utils/siteSettings';
+import { LogoMark } from '../common/Logo';
 
 export function Footer() {
   const { siteName } = usePublicSiteSettings();
@@ -12,20 +13,7 @@ export function Footer() {
           {/* Col 1: Brand & Security Mission */}
           <div className="lg:col-span-2 space-y-4">
             <Link to="/" className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold shadow-md">
-                <svg
-                  className="w-5 h-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M4 14h6m-6 0v-6m0 6l7-7" />
-                  <path d="M20 10h-6m6 0v6m0-6l-7 7" />
-                </svg>
-              </div>
+              <LogoMark size={36} title="" className="shrink-0 rounded-xl" />
               <span className="text-xl font-black tracking-tight text-white">
                 {siteName}
               </span>

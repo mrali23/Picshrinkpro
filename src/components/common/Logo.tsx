@@ -1,0 +1,47 @@
+import { useId } from 'react';
+
+// Generated brand mark: white "P" + ice-cyan "S" outlines (Sora ExtraBold, OFL-1.1) on a blue-to-violet tile.
+// Keep in sync with public/favicon.svg.
+const P_PATH = 'M20.95 90.1V38.62H40.6Q47.18 38.62 51.97 40.82Q56.76 43.03 59.35 47.15Q61.94 51.28 61.94 57.02V58.13Q61.94 63.8 59.35 67.93Q56.76 72.05 51.97 74.29Q47.18 76.53 40.6 76.53H33.96V90.1ZM33.96 49.81V65.34H40.95Q43.33 65.34 45.08 64.4Q46.83 63.45 47.81 61.7Q48.79 59.95 48.79 57.58Q48.79 55.13 47.81 53.38Q46.83 51.63 45.08 50.72Q43.33 49.81 40.95 49.81Z';
+const S_PATH = 'M85.86 91.5Q78.72 91.5 73.86 89.26Q69 87.02 66.52 83.14Q64.03 79.26 64.03 74.22H76.63Q76.63 76.04 77.64 77.55Q78.65 79.05 80.68 79.89Q82.71 80.73 85.86 80.73Q88.59 80.73 90.51 80.03Q92.43 79.33 93.45 78.07Q94.46 76.81 94.46 75.06Q94.46 72.82 92.57 71.6Q90.69 70.38 86.21 70.03L82.92 69.75Q75.02 69.05 70.33 64.78Q65.64 60.51 65.64 53.45Q65.64 48.41 67.99 44.84Q70.33 41.28 74.6 39.39Q78.86 37.5 84.67 37.5Q90.97 37.5 95.34 39.6Q99.71 41.7 102.02 45.51Q104.33 49.32 104.33 54.36H91.73Q91.73 52.68 90.9 51.28Q90.06 49.88 88.48 49.08Q86.91 48.27 84.67 48.27Q82.57 48.27 81.14 48.94Q79.7 49.6 78.97 50.79Q78.23 51.98 78.23 53.45Q78.23 55.41 79.56 56.81Q80.89 58.2 84.18 58.48L87.47 58.76Q93.2 59.25 97.61 61.25Q102.02 63.24 104.53 66.67Q107.05 70.1 107.05 75.06Q107.05 80.03 104.5 83.74Q101.95 87.44 97.23 89.47Q92.5 91.5 85.86 91.5Z';
+
+interface LogoMarkProps {
+  /** Rendered width and height in px. */
+  size?: number;
+  className?: string;
+  /** Accessible name. Pass an empty string when the brand name is already next to the mark. */
+  title?: string;
+}
+
+export function LogoMark({ size = 40, className, title = 'PicShrink' }: LogoMarkProps) {
+  const uid = useId().replace(/:/g, '');
+  const grad = `ps-grad-${uid}`;
+  const shine = `ps-shine-${uid}`;
+  return (
+    <svg
+      viewBox="0 0 128 128"
+      width={size}
+      height={size}
+      className={className}
+      role={title ? 'img' : undefined}
+      aria-hidden={title ? undefined : true}
+      focusable="false"
+    >
+      {title && <title>{title}</title>}
+      <defs>
+        <linearGradient id={grad} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#2F6BFF" />
+          <stop offset="1" stopColor="#6D3DF5" />
+        </linearGradient>
+        <linearGradient id={shine} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff" stopOpacity=".18" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <rect width="128" height="128" rx="30" fill={`url(#${grad})`} />
+      <rect width="128" height="64" rx="30" fill={`url(#${shine})`} />
+      <path d={P_PATH} fill="#fff" />
+      <path d={S_PATH} fill="#A5F3FC" />
+    </svg>
+  );
+}
