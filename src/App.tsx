@@ -10,7 +10,8 @@ const HomePage = lazy(() => import('./pages/HomePage').then(m => ({ default: m.H
 const CompressorPage = lazy(() => import('./pages/tools/CompressorPage').then(m => ({ default: m.CompressorPage })));
 const BgRemoverPage = lazy(() => import('./pages/tools/BgRemoverPage').then(m => ({ default: m.BgRemoverPage })));
 const ResizerPage = lazy(() => import('./pages/tools/ResizerPage').then(m => ({ default: m.ResizerPage })));
-const CropperPage = lazy(() => import('./pages/tools/CropperPage').then(m => ({ default: m.CropperPage })));
+// Use ImageCropperPage path (not CropperPage) so builds never pick up a cached PLACEHOLDER stub.
+const CropperPage = lazy(() => import('./pages/tools/ImageCropperPage').then(m => ({ default: m.CropperPage })));
 const JpgToPngPage = lazy(() => import('./pages/tools/JpgToPngPage').then(m => ({ default: m.JpgToPngPage })));
 const PngToJpgPage = lazy(() => import('./pages/tools/PngToJpgPage').then(m => ({ default: m.PngToJpgPage })));
 const WebpConverterPage = lazy(() => import('./pages/tools/WebpConverterPage').then(m => ({ default: m.WebpConverterPage })));
@@ -57,10 +58,7 @@ export function AppRoutes() {
           <main className="flex-1">
             <Suspense fallback={<div role="status" className="mx-auto max-w-5xl px-4 py-16 text-center text-slate-500">Loading page…</div>}>
             <Routes>
-              {/* 1. Home Page */}
               <Route path="/" element={<HomePage />} />
-
-              {/* 2. Tool Pages (8 Pages) */}
               <Route path="/compressor" element={<CompressorPage />} />
               <Route path="/bg-remover" element={<BgRemoverPage />} />
               <Route path="/resizer" element={<ResizerPage />} />
@@ -70,25 +68,17 @@ export function AppRoutes() {
               <Route path="/webp-converter" element={<WebpConverterPage />} />
               <Route path="/image-to-pdf" element={<ImageToPdfPage />} />
               <Route path="/filters" element={<FiltersPage />} />
-
-              {/* 3. Legal & Company Pages (4 Pages) */}
               <Route path="/about" element={<AboutPage />} />
               <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
               <Route path="/terms" element={<TermsPage />} />
               <Route path="/contact" element={<ContactPage />} />
-
-              {/* 4. Blog Pages (8 Pages: 1 Index + 7 Articles) */}
               <Route path="/blog" element={<BlogIndexPage />} />
               <Route path="/blog/:slug" element={<BlogPostPage />} />
-              {/* Alias for prompt variation */}
               <Route
                 path="/blog/compress-without-losing-quality"
                 element={<Navigate to="/blog/how-to-compress-image-without-losing-quality" replace />}
               />
-
               <Route path="/admin" element={<AdminDashboardPage />} />
-
-              {/* Unknown URLs: real 404 page (noindex). The server answers these with HTTP 404 via dist/404.html. */}
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
             </Suspense>
