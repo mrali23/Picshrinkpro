@@ -394,3 +394,5 @@ export function CropperPage() {
     </div>
   );
 }
+
+export default CropperPage;
