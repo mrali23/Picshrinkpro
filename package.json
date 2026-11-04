@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js --port=3000 --host=0.0.0.0",
-    "prebuild": "node -e \"const fs=require('fs');const p='src/pages/tools/CropperPage.tsx';const t=fs.readFileSync(p,'utf8');console.log('[prebuild] commit', process.env.CF_PAGES_COMMIT_SHA||process.env.GITHUB_SHA||'local');console.log('[prebuild]',p,'bytes='+t.length,'starts='+JSON.stringify(t.slice(0,60)));if(/^\\s*PLACEHOLDER\\s*$/.test(t)){console.error('[prebuild] PLACEHOLDER stub detected');process.exit(1)}\"",
-    "build": "node ./node_modules/vite/bin/vite.js build && node ./node_modules/vite/bin/vite.js build --ssr src/entry-server.tsx --outDir dist-ssr && node scripts/prerender.mjs",
+    "build": "node -e \"const fs=require('fs');const p='src/pages/tools/CropperPage.tsx';const t=fs.readFileSync(p,'utf8');console.log('[build-check] CF_PAGES_COMMIT_SHA='+(process.env.CF_PAGES_COMMIT_SHA||'n/a'));console.log('[build-check]',p,'bytes='+t.length,'starts='+JSON.stringify(t.slice(0,80)));if(/^\\s*PLACEHOLDER\\s*$/.test(t)){console.error('PLACEHOLDER stub in CropperPage');process.exit(1)}\" && node ./node_modules/vite/bin/vite.js build && node ./node_modules/vite/bin/vite.js build --ssr src/entry-server.tsx --outDir dist-ssr && node scripts/prerender.mjs",
     "test": "node --import tsx --test src/worker.test.ts src/utils/batchProcessors.test.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist dist-ssr server.js",
