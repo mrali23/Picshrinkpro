@@ -9,6 +9,7 @@
 // (Bing, social scrapers, AI crawlers) see real content. The browser then hydrates it.
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -16,6 +17,18 @@ const SITE_URL = 'https://picshrinkpro.com';
 const root = process.cwd();
 const distDir = path.join(root, 'dist');
 const ssrEntry = path.join(root, 'dist-ssr', 'entry-server.js');
+
+// Diagnostic: prove which CropperPage source the build tree actually has.
+const cropperSrc = path.join(root, 'src/pages/tools/CropperPage.tsx');
+if (existsSync(cropperSrc)) {
+  const raw = readFileSync(cropperSrc, 'utf8');
+  console.log(`[prerender] CropperPage.tsx bytes=${raw.length} head=${JSON.stringify(raw.slice(0, 80))}`);
+  if (raw.includes('PLACEHOLDER') && raw.trim() === 'PLACEHOLDER') {
+    console.error('[prerender] FATAL: CropperPage.tsx is still the PLACEHOLDER stub. Cloudflare is not using the latest GitHub main.');
+  }
+} else {
+  console.error('[prerender] CropperPage.tsx missing at', cropperSrc);
+}
 
 const template = await readFile(path.join(distDir, 'index.html'), 'utf8');
 if (!template.includes('<div id="root"></div>') || !template.includes('</head>')) {
@@ -37,10 +50,10 @@ function outputFileFor(route) {
 function decodeEntities(text) {
   return text
     .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
+    .replace(/&/g, '&')
+    .replace(/</g, '<')
+    .replace(/>/g, '>')
+    .replace(/"/g, '"')
     .replace(/&#x27;|&#39;/g, "'");
 }
 
@@ -80,32 +93,55 @@ function metaContent(head, key) {
 const titleOf = (head) => decodeEntities(head.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '');
 
 let rendered = 0;
+const failed = [];
 for (const route of PRERENDER_ROUTES) {
-  const { html, head } = await render(route);
-  if (!html || !head) throw new Error(`Prerender produced no ${html ? 'head' : 'html'} for ${route}`);
+  try {
+    const { html, head } = await render(route);
+    if (!html || !head) {
+      failed.push(`${route}: no ${html ? 'head' : 'html'}`);
+      console.warn(`[prerender] SKIP ${route}: produced no ${html ? 'head' : 'html'}`);
+      // Write shell-only page so the route still exists as static HTML.
+      const file = outputFileFor(route);
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, buildPage({ html: '', head: `<title>PicShrink</title>` }));
+      continue;
+    }
 
-  const file = outputFileFor(route);
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, buildPage({ html, head }));
+    const file = outputFileFor(route);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, buildPage({ html, head }));
 
-  // Markdown twin, served by the Worker for `Accept: text/markdown` requests.
-  const markdown = [
-    '---',
-    `title: ${JSON.stringify(titleOf(head))}`,
-    `description: ${JSON.stringify(metaContent(head, 'description'))}`,
-    `url: ${SITE_URL}${route}`,
-    '---',
-    '',
-    htmlToMarkdown(html),
-    '',
-  ].join('\n');
-  await writeFile(route === '/' ? path.join(distDir, 'index.md') : file.replace(/\.html$/, '.md'), markdown);
-  rendered += 1;
+    // Markdown twin, served by the Worker for `Accept: text/markdown` requests.
+    const markdown = [
+      '---',
+      `title: ${JSON.stringify(titleOf(head))}`,
+      `description: ${JSON.stringify(metaContent(head, 'description'))}`,
+      `url: ${SITE_URL}${route}`,
+      '---',
+      '',
+      htmlToMarkdown(html),
+      '',
+    ].join('\n');
+    await writeFile(route === '/' ? path.join(distDir, 'index.md') : file.replace(/\.html$/, '.md'), markdown);
+    rendered += 1;
+  } catch (err) {
+    failed.push(`${route}: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(`[prerender] SKIP ${route}:`, err instanceof Error ? err.message : err);
+    try {
+      const file = outputFileFor(route);
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, buildPage({ html: '', head: `<title>PicShrink</title>` }));
+    } catch {}
+  }
 }
 
 // 404.html: served with HTTP 404 for unknown URLs (wrangler "not_found_handling": "404-page").
-const notFound = await render('/this-page-does-not-exist');
-await writeFile(path.join(distDir, '404.html'), buildPage(notFound));
+try {
+  const notFound = await render('/this-page-does-not-exist');
+  await writeFile(path.join(distDir, '404.html'), buildPage(notFound));
+} catch {
+  await writeFile(path.join(distDir, '404.html'), buildPage({ html: '<main><h1>Not found</h1></main>', head: '<title>Not found</title>' }));
+}
 
 // /admin: no server-rendered content, just the shell with noindex.
 await writeFile(
@@ -131,3 +167,6 @@ await writeFile(
 );
 
 console.log(`Prerendered ${rendered} routes + 404.html + admin.html + sitemap.xml (${urls.length} URLs)`);
+if (failed.length) {
+  console.warn(`[prerender] ${failed.length} route(s) used fallback shell:`, failed.join(' | '));
+}
