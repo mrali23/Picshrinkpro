@@ -5,6 +5,12 @@
   "compatibility_date": "2026-10-26",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  
+  // Add your environment variables here for local development / fallback
+  "vars": {
+    "ADMIN_USERNAME": "Ghost143"
+  },
+
   "durable_objects": {
     "bindings": [
       { "name": "ADMIN_DATA", "class_name": "AdminData" }
@@ -16,10 +22,8 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    // Every route is prerendered to its own file, so unknown URLs get the real 404 page (HTTP 404).
     "not_found_handling": "404-page",
     "html_handling": "auto-trailing-slash",
-    // Worker runs for pages (security headers, Markdown negotiation, API); hashed build assets skip it.
     "run_worker_first": ["/*", "!/assets/*"]
   }
 }
