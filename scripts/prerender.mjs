@@ -23,8 +23,9 @@ const cropperSrc = path.join(root, 'src/pages/tools/CropperPage.tsx');
 if (existsSync(cropperSrc)) {
   const raw = readFileSync(cropperSrc, 'utf8');
   console.log(`[prerender] CropperPage.tsx bytes=${raw.length} head=${JSON.stringify(raw.slice(0, 80))}`);
-  if (raw.includes('PLACEHOLDER') && raw.trim() === 'PLACEHOLDER') {
+  if (raw.trim() === 'PLACEHOLDER') {
     console.error('[prerender] FATAL: CropperPage.tsx is still the PLACEHOLDER stub. Cloudflare is not using the latest GitHub main.');
+    process.exit(1);
   }
 } else {
   console.error('[prerender] CropperPage.tsx missing at', cropperSrc);
@@ -139,7 +140,9 @@ for (const route of PRERENDER_ROUTES) {
 try {
   const notFound = await render('/this-page-does-not-exist');
   await writeFile(path.join(distDir, '404.html'), buildPage(notFound));
-} catch {
+} catch (err) {
+  failed.push(`404 page: ${err instanceof Error ? err.message : String(err)}`);
+  console.warn('[prerender] 404 page failed to render:', err instanceof Error ? err.message : err);
   await writeFile(path.join(distDir, '404.html'), buildPage({ html: '<main><h1>Not found</h1></main>', head: '<title>Not found</title>' }));
 }
 
@@ -168,5 +171,13 @@ await writeFile(
 
 console.log(`Prerendered ${rendered} routes + 404.html + admin.html + sitemap.xml (${urls.length} URLs)`);
 if (failed.length) {
-  console.warn(`[prerender] ${failed.length} route(s) used fallback shell:`, failed.join(' | '));
+  const summary = `${failed.length} route(s) used the fallback shell instead of real content: ${failed.join(' | ')}`;
+  // A page that silently ships as an empty shell is worse than a failed deploy (the previous good
+  // deployment keeps serving). Set PRERENDER_ALLOW_FALLBACK=1 to downgrade this to a warning in an emergency.
+  if (process.env.PRERENDER_ALLOW_FALLBACK === '1') {
+    console.warn(`[prerender] WARNING: ${summary}`);
+  } else {
+    console.error(`[prerender] FAILED: ${summary}`);
+    process.exit(1);
+  }
 }
