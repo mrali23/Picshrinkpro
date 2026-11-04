@@ -1,2 +1,1 @@
-/** Re-export interactive cropper from the stable module path. */
-export { CropperPage, default } from './ImageCropperPage';
+export { CropperPage, CropperPage as default } from './ImageCropperPage';
