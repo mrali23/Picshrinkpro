@@ -5,11 +5,6 @@
   "compatibility_date": "2026-10-26",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  
-  // Add your environment variables here for local development / fallback
-  "vars": {
-    "ADMIN_USERNAME": "Ghost143"
-  },
 
   "durable_objects": {
     "bindings": [
