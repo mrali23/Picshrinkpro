@@ -3,8 +3,4 @@ Allow: /
 Disallow: /admin
 Disallow: /api/
 
-# AI preferences (https://contentsignals.org): allow search and AI answers/citations,
-# but do not allow use of the content for model training.
-Content-Signal: search=yes, ai-input=yes, ai-train=yes
-
 Sitemap: https://picshrinkpro.com/sitemap.xml
