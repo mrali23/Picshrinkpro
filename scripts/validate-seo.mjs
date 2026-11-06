@@ -60,9 +60,40 @@ for (const rawUrl of urls) {
   if (seen.has(duplicateKey)) failures.push(`Duplicate canonical URL: ${duplicateKey}`);
   seen.add(duplicateKey);
 
-  const imageTags = html.match(/<img\b[^>]*>/gi) ?? [];
-  const missingAlt = imageTags.filter((tag) => !/\balt\s*=/.test(tag)).length;
-  if (missingAlt) warnings.push(`${missingAlt} image(s) without an alt attribute: ${rawUrl}`);
+  const imageTags = html.match(/<img\\b[^>]*>/gi) ?? [];
+  const missingAlt = imageTags.filter((tag) => !/\\balt\\s*=/.test(tag)).length;
+  if (missingAlt) failures.push(`${missingAlt} image(s) without an alt attribute: ${rawUrl}`);
+
+  // Validate same-origin links and image/script sources against generated output.
+  const localTargets = [
+    ...(html.match(/<a\\b[^>]*\\bhref=["']([^"'#][^"']*)["'][^>]*>/gi) ?? [])
+      .map((tag) => tag.match(/\\bhref=["']([^"']+)["']/i)?.[1]),
+    ...(html.match(/<(?:img|script|source)\\b[^>]*\\bsrc=["']([^"']+)["'][^>]*>/gi) ?? [])
+      .map((tag) => tag.match(/\\bsrc=["']([^"']+)["']/i)?.[1]),
+  ].filter(Boolean);
+
+  for (const target of localTargets) {
+    let targetUrl;
+    try { targetUrl = new URL(target, siteOrigin); } catch { continue; }
+    if (targetUrl.origin !== siteOrigin) continue;
+    let pathname;
+    try { pathname = decodeURIComponent(targetUrl.pathname); } catch {
+      failures.push(`Invalid encoded internal target on ${rawUrl}: ${target}`);
+      continue;
+    }
+    const relative = pathname.replace(/^\\/+/, '');
+    const hasExtension = path.extname(relative) !== '';
+    const targetPath = path.resolve(dist, relative
+      ? (hasExtension ? relative : `${relative.replace(/\\/+$/, '')}.html`)
+      : 'index.html');
+    if (targetPath !== dist && !targetPath.startsWith(dist + path.sep)) {
+      failures.push(`Internal target escapes dist on ${rawUrl}: ${target}`);
+      continue;
+    }
+    if (!(await exists(targetPath))) {
+      failures.push(`Broken internal link or asset on ${rawUrl}: ${target}`);
+    }
+  }
 }
 
 const robotsPath = path.join(dist, 'robots.txt');
