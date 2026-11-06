@@ -122,7 +122,7 @@ export function HomePage() {
 
               <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
                 Compress, remove backgrounds, resize, crop, and convert JPG, PNG, WebP, and PDF
-                instantly. Fast, free, with zero watermarks and absolute confidentiality.
+                instantly. Free browser-based tools with no watermark; image processing stays on your device, while ordinary site services may still make network requests.
               </p>
 
               {/* Quick Action Buttons */}
@@ -264,10 +264,9 @@ export function HomePage() {
               <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
                 <ShieldCheck className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900">100% Private</h3>
+              <h3 className="text-lg font-bold text-slate-900">Local Image Processing</h3>
               <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                Your private files and sensitive photos never touch any server. Everything happens
-                in your browser sandbox.
+                Image tools process your selected files locally in your browser. Some supporting site resources and optional analytics may use network services; see our Privacy Policy.
               </p>
             </div>
 
