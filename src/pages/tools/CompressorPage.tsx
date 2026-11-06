@@ -186,8 +186,7 @@ export function CompressorPage() {
             Free Image Compressor
           </h1>
           <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
-            Compress JPG, PNG, and WebP images online up to 90% without losing visual clarity.
-            Zero file uploads to servers. Fast, secure, and unlimited.
+            Compress JPG, PNG, and WebP images in your browser. Adjust quality and optional dimensions to balance file size and visual detail; results vary by source image and format.
           </p>
         </div>
 
@@ -278,7 +277,7 @@ export function CompressorPage() {
                       <SkeletonPreview
                         mode={viewMode}
                         statusText={`Compressing ${activeImage.originalName} at ${quality}% quality...`}
-                        subText="In-browser quantization • Zero server uploads • Instant lossless compression"
+                        subText="In-browser processing • No image upload by this tool • Quality depends on format and settings"
                         heightClass="h-72 sm:h-80"
                       />
                     ) : activeImage.processedUrl ? (
@@ -459,7 +458,7 @@ export function CompressorPage() {
         <FaqSection
           faqs={toolMeta.faqs}
           title="Image Compression FAQs"
-          subtitle="Answers to common questions regarding in-browser lossless and lossy compression."
+          subtitle="Understand image formats, compression quality, and local browser processing."
         />
       </div>
     </div>
