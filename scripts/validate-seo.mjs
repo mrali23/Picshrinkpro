@@ -17,7 +17,7 @@ if (!(await exists(sitemapPath))) {
 }
 
 const sitemap = await readFile(sitemapPath, 'utf8');
-const urls = [...sitemap.matchAll(/<loc>\\s*([^<]+?)\\s*<\\/loc>/gi)].map((match) => match[1].trim());
+const urls = [...sitemap.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)].map((match) => match[1].trim());
 if (urls.length === 0) failures.push('Sitemap contains no <loc> URLs.');
 
 const seen = new Set();
@@ -31,7 +31,7 @@ for (const rawUrl of urls) {
   if (url.search || url.hash) failures.push(`Sitemap URL contains query/hash: ${rawUrl}`);
   if (url.pathname.startsWith('/admin')) failures.push(`Admin route must not be in sitemap: ${rawUrl}`);
 
-  const route = url.pathname.replace(/^\\/+|\\/+$/g, '');
+  const route = url.pathname.replace(/^\/+|\/+$/g, '');
   const htmlPath = path.join(dist, route ? `${route}.html` : 'index.html');
   if (!(await exists(htmlPath))) {
     failures.push(`Sitemap URL has no prerendered HTML: ${rawUrl} -> ${htmlPath}`);
@@ -39,14 +39,14 @@ for (const rawUrl of urls) {
   }
 
   const html = await readFile(htmlPath, 'utf8');
-  const title = html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i)?.[1]?.trim();
-  const description = html.match(/<meta\\s+name=["']description["'][^>]*content=["']([^"']*)["'][^>]*\\/?>/i)?.[1]
-    ?? html.match(/<meta\\s+name=["']description["']\\s+content=["']([^"']*)["']/i)?.[1];
-  const canonical = html.match(/<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["'][^>]*\\/?>/i)?.[1]
-    ?? html.match(/<link[^>]*href=["']([^"']+)["'][^>]*rel=["']canonical["'][^>]*\\/?>/i)?.[1];
-  const robots = html.match(/<meta[^>]*name=["']robots["'][^>]*content=["']([^"']+)["'][^>]*\\/?>/i)?.[1]
-    ?? html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']robots["'][^>]*\\/?>/i)?.[1];
-  const h1Count = (html.match(/<h1(?:\\s|>)/gi) ?? []).length;
+  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim();
+  const description = html.match(/<meta\s+name=["']description["'][^>]*content=["']([^"']*)["'][^>]*\/?>/i)?.[1]
+    ?? html.match(/<meta\s+name=["']description["']\s+content=["']([^"']*)["']/i)?.[1];
+  const canonical = html.match(/<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["'][^>]*\/?>/i)?.[1]
+    ?? html.match(/<link[^>]*href=["']([^"']+)["'][^>]*rel=["']canonical["'][^>]*\/?>/i)?.[1];
+  const robots = html.match(/<meta[^>]*name=["']robots["'][^>]*content=["']([^"']+)["'][^>]*\/?>/i)?.[1]
+    ?? html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']robots["'][^>]*\/?>/i)?.[1];
+  const h1Count = (html.match(/<h1(?:\s|>)/gi) ?? []).length;
 
   if (!title) failures.push(`Missing title: ${rawUrl}`);
   if (!description?.trim()) failures.push(`Missing meta description: ${rawUrl}`);
@@ -60,8 +60,8 @@ for (const rawUrl of urls) {
   if (seen.has(duplicateKey)) failures.push(`Duplicate canonical URL: ${duplicateKey}`);
   seen.add(duplicateKey);
 
-  const imageTags = html.match(/<img\\b[^>]*>/gi) ?? [];
-  const missingAlt = imageTags.filter((tag) => !/\\balt\\s*=/.test(tag)).length;
+  const imageTags = html.match(/<img\b[^>]*>/gi) ?? [];
+  const missingAlt = imageTags.filter((tag) => !/\balt\s*=/.test(tag)).length;
   if (missingAlt) warnings.push(`${missingAlt} image(s) without an alt attribute: ${rawUrl}`);
 }
 
@@ -69,7 +69,7 @@ const robotsPath = path.join(dist, 'robots.txt');
 if (!(await exists(robotsPath))) failures.push('Missing dist/robots.txt');
 else {
   const robotsTxt = await readFile(robotsPath, 'utf8');
-  if (!/Sitemap:\\s*https:\\/\\/picshrinkpro\\.com\\/sitemap\\.xml/i.test(robotsTxt)) {
+  if (!/Sitemap:\s*https:\/\/picshrinkpro\.com\/sitemap\.xml/i.test(robotsTxt)) {
     failures.push('robots.txt does not reference the canonical sitemap URL.');
   }
 }
