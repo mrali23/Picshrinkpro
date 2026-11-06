@@ -197,11 +197,11 @@ export function Navbar() {
             </Link>
           </nav>
 
-          {/* Right badge: 100% Private */}
+          {/* Right badge: local image processing */}
           <div className="hidden lg:flex items-center gap-3">
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 text-xs font-semibold">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>100% Private &amp; In-Browser</span>
+              <span>Local Processing &amp; In-Browser</span>
             </div>
           </div>
 

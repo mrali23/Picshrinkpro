@@ -142,14 +142,13 @@ export function JpgToPngPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-3xl mx-auto">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-purple-100 text-purple-700 mb-3">
-            <FileType2 className="w-3.5 h-3.5" /> Lossless Conversion
+            <FileType2 className="w-3.5 h-3.5" /> PNG Output
           </span>
           <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">
             JPG to PNG Converter
           </h1>
           <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
-            Convert JPG images into crisp, lossless PNG format in bulk. 100% free, private
-            in-browser processing with zero watermarks and one-click ZIP download.
+            Convert JPG images to PNG format in bulk. PNG stores the converted image using lossless encoding, but it cannot restore detail already lost in the original JPEG. Processing runs in your browser.
           </p>
         </div>
 
@@ -178,7 +177,7 @@ export function JpgToPngPage() {
                         <span className="font-semibold text-amber-600">JPG</span>
                         <span>({formatFileSize(activeImage.originalSize)})</span>
                         <span>→</span>
-                        <span className="font-semibold text-purple-600">PNG Lossless</span>
+                        <span className="font-semibold text-purple-600">PNG</span>
                         {activeImage.processedSize && (
                           <span>({formatFileSize(activeImage.processedSize)})</span>
                         )}
@@ -262,7 +261,7 @@ export function JpgToPngPage() {
                       <SkeletonPreview
                         mode={viewMode}
                         statusText="Initializing converter..."
-                        subText="100% private in-browser JPG to PNG conversion"
+                        subText="JPG to PNG conversion runs locally in this browser"
                       />
                     )}
                   </div>
