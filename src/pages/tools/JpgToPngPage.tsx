@@ -261,7 +261,7 @@ export function JpgToPngPage() {
                       <SkeletonPreview
                         mode={viewMode}
                         statusText="Initializing converter..."
-                        subText="100% private in-browser JPG to PNG conversion"
+                        subText="JPG to PNG conversion runs locally in this browser"
                       />
                     )}
                   </div>
