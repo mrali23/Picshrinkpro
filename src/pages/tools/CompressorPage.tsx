@@ -180,7 +180,7 @@ export function CompressorPage() {
         {/* H1 & Header */}
         <div className="text-center max-w-3xl mx-auto">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-blue-100 text-blue-700 mb-3">
-            <Sparkles className="w-3.5 h-3.5" /> 100% In-Browser Privacy
+            <Sparkles className="w-3.5 h-3.5" /> Local Image Processing
           </span>
           <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">
             Free Image Compressor
@@ -200,7 +200,7 @@ export function CompressorPage() {
               onFilesSelected={handleFilesSelected}
               acceptedTypes={toolMeta.acceptedTypes}
               title="Drop images here to compress"
-              description="Batch upload supported. Works 100% locally on your computer or phone."
+              description="Batch upload supported. Selected images are processed in your browser and are not uploaded by this tool."
             />
           </div>
         ) : (
