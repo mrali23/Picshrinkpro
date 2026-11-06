@@ -17,22 +17,30 @@
     <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
     <link rel="dns-prefetch" href="https://cdn.cookiehub.eu" />
 
-    <!-- Cookie consent - deferred, non-blocking -->
-    <script src="https://cdn.cookiehub.eu/c2/9ad8b98f.js" defer></script>
-    <script type="text/javascript" defer>
+    <!--
+      CookieHub must execute synchronously before any tracking or advertising tag.
+      Keep this at the top of <head>; do not add async/defer or move it below tags.
+    -->
+    <script data-cfasync="false" src="https://cdn.cookiehub.eu/c2/9ad8b98f.js"></script>
+    <script>
       document.addEventListener("DOMContentLoaded", function () {
         if (window.cookiehub) window.cookiehub.load({});
       });
     </script>
 
-    <!-- Google AdSense -->
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6886959121283165"
-      crossorigin="anonymous"></script>
+    <!-- Ahrefs is not a Google Consent Mode tag; require explicit analytics consent. -->
+    <script
+      type="text/plain"
+      data-consent="analytics"
+      data-src="https://analytics.ahrefs.com/analytics.js"
+      data-key="rz6iLvSCak6xN+IoaDuDlg"
+    ></script>
 
-    <!-- Ahrefs Web Analytics -->
-    <script src="https://analytics.ahrefs.com/analytics.js" data-key="rz6iLvSCak6xN+IoaDuDlg" async></script>
-
-    <!-- Google tag (gtag.js) - async + delayed config so it does not compete with LCP -->
+    <!--
+      Google tags are placed after CookieHub so its configured automatic blocker /
+      Consent Mode integration can initialize before these resources execute.
+      AdSense is loaded by AdBanner only when ads are enabled in Site Settings.
+    -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-TP5X9WE2N2"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
