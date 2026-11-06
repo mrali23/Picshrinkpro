@@ -142,7 +142,7 @@ export function ImageToPdfPage() {
           </h1>
           <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
             Convert JPG, PNG, and WebP images into a single clean PDF document online.
-            Reorder pages, customize margins and paper sizes with 100% private in-browser generation.
+            Reorder pages, customize margins and paper sizes. PDF generation runs in your browser; supporting site resources may still make network requests.
           </p>
         </div>
 
