@@ -88,7 +88,7 @@ const homeFaqs = [
   {
     question: 'Will compressing my images ruin their visual quality?',
     answer:
-      'Not at all. Our smart compression algorithms discard only redundant color data and metadata that the human eye cannot perceive. Images typically shrink by 70% to 85% while remaining virtually indistinguishable from the original raw file.',
+      'Compression can reduce file size, but the effect on image quality depends on the format, source image, and selected settings. Lossy formats discard image data; compare the preview before downloading.',
   },
 ];
 
