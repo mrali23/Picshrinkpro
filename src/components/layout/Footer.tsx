@@ -22,14 +22,14 @@ export function Footer() {
             <p className="text-sm text-slate-400 max-w-sm leading-relaxed">
               {siteName} is a free suite of privacy-first, client-side online image tools.
               Compress, remove background, resize, crop, and convert JPG, PNG, WebP, and PDF
-              with zero server uploads and zero watermarks.
+              without uploading selected image files through the tools. Supporting site services may still make network requests.
             </p>
 
             <div className="p-3.5 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-start gap-3 max-w-sm">
               <Lock className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
               <div className="text-xs text-slate-300">
                 <strong className="text-white block font-semibold mb-0.5">
-                  100% Client-Side Private
+                  Local Image Processing
                 </strong>
                 All operations execute inside your browser’s WebAssembly &amp; HTML5 Canvas.
                 Your files never touch a remote server.

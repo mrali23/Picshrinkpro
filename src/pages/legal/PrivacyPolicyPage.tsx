@@ -31,10 +31,10 @@ export function PrivacyPolicyPage() {
           <div className="p-6 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-2">
             <div className="flex items-center gap-2 font-bold text-lg text-emerald-950">
               <CheckCircle className="w-5 h-5 text-emerald-600" />
-              <span>Summary: We Do Not Store, Access, Or Transmit Your Images</span>
+              <span>Your Selected Images Are Processed in Your Browser</span>
             </div>
             <p className="text-sm text-emerald-800">
-              Image inputs for compression, resizing, cropping, conversion, and background removal are processed in your browser and are not uploaded by these tools. The AI background remover downloads its runtime and model weights from third-party content hosts on first use; those downloads do not contain your image. If you configure Google Analytics, event data is sent to Google.
+              The image tools process selected files in your browser and do not upload those files to PicShrink servers. The site itself loads supporting services such as analytics, advertising, and consent-management resources; those services may make network requests. The AI background remover may download its runtime and model files from third-party hosts, but those downloads do not contain your selected image.
             </p>
           </div>
 
@@ -46,7 +46,7 @@ export function PrivacyPolicyPage() {
               collect:
             </p>
             <ul className="list-disc pl-6 space-y-1 text-slate-600">
-              <li>Your uploaded photos, graphics, documents, or image metadata.</li>
+              <li>The image files you select for processing are not uploaded by the image tools to PicShrink servers.</li>
               <li>Your identity, personal email address, or phone number. Anonymous browser activity identifiers are used for site-wide usage counts when the analytics endpoint is available.</li>
               <li>Payment details or credit card information (our tools are 100% free).</li>
             </ul>
@@ -62,7 +62,7 @@ export function PrivacyPolicyPage() {
           <section className="space-y-3">
             <h2 className="text-xl font-bold text-slate-900">3. Advertising &amp; Cookies</h2>
             <p>
-              AdSense ads load only when the site administrator enables them and configures a publisher account and ad slots. Google and its partners may use cookies or similar technologies to serve and measure ads under their own policies.
+              The site includes Google AdSense integration. When advertising is active, Google and its partners may use cookies or similar technologies to serve, personalize, and measure ads, subject to applicable settings, consent choices, and their own policies. A consent banner is provided; its configuration and behavior should be reviewed for the regions where the site operates.
             </p>
             <p>
               You can opt out of personalized advertising by visiting Google Ad Settings (

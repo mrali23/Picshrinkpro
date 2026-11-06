@@ -7,7 +7,7 @@ export function AboutPage() {
     <div className="min-h-screen bg-slate-50 py-12">
       <SEOHead
         title="About PicShrink - Our Mission for Free Private Image Tools"
-        description="Learn about PicShrink's mission: delivering 100% free, client-side, privacy-first online image tools with zero server uploads and zero watermarks."
+        description="Learn about PicShrink's mission: delivering free, browser-based image tools. Selected images are processed locally by the tools and are not uploaded by those tools; supporting site services may still make network requests."
         path="/about"
       />
 
@@ -15,14 +15,14 @@ export function AboutPage() {
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-10">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-blue-100 text-blue-700 mb-3">
-            <ShieldCheck className="w-3.5 h-3.5" /> 100% In-Browser Privacy
+            <ShieldCheck className="w-3.5 h-3.5" /> Local Image Processing
           </span>
           <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">
             About PicShrink
           </h1>
           <p className="mt-4 text-base sm:text-lg text-slate-600 leading-relaxed">
             Empowering millions of creators, developers, photographers, and small businesses with
-            frictionless, studio-quality image editing tools that run 100% locally on your machine.
+            browser-based image editing tools that process selected images locally on your device.
           </p>
         </div>
 

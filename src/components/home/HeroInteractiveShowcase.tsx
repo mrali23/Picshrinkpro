@@ -303,7 +303,7 @@ export function HeroInteractiveShowcase() {
         <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-1">
           <div className="flex items-center gap-1 font-medium">
             <Lock className="w-3.5 h-3.5 text-emerald-600" />
-            <span>100% In-Browser Privacy</span>
+            <span>Local Image Processing</span>
           </div>
           <div className="flex items-center gap-1 font-medium">
             <Zap className="w-3.5 h-3.5 text-amber-500" />

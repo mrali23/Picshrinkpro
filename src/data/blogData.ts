@@ -5,7 +5,7 @@ export const BLOG_POSTS: BlogPost[] = [
     slug: 'how-to-compress-image-without-losing-quality',
     path: '/blog/how-to-compress-image-without-losing-quality',
     title: 'How to Compress Images Without Losing Quality: Complete 2026 Guide',
-    description: 'Learn step-by-step how to compress JPG, PNG, and WebP images without losing visual quality. Reduce file sizes by up to 85% for faster websites and sharing.',
+    description: 'Learn how to compress JPG, PNG, and WebP images while balancing file size and visual quality. Results vary by image, format, and compression settings.',
     author: 'PicShrink Team',
     date: '2026-10-23',
     readTime: '6 min read',
@@ -267,7 +267,7 @@ export const BLOG_POSTS: BlogPost[] = [
             'Once uploaded, you can reorder pages by tapping the up and down buttons, choose between Portrait and Landscape orientation, and toggle between standard A4 or US Letter page formats.'
           ],
           bullets: [
-            'Zero server uploads: Sensitive receipts and tax documents stay safely on your phone.',
+            'Local processing: selected images are processed in your browser and are not uploaded by the tool. Supporting site resources may still use network services.',
             'Combine unlimited photos into one multi-page PDF.',
             'One-tap save directly to your Files or Downloads folder.'
           ],
