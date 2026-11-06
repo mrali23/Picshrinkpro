@@ -110,7 +110,7 @@ export function HomePage() {
             <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200/60 text-blue-700 text-xs font-bold tracking-wide">
                 <Sparkles className="w-4 h-4 text-blue-600" />
-                <span>100% Client-Side In-Browser • Zero Server Uploads</span>
+                <span>Local Image Processing • No Tool Uploads</span>
               </div>
 
               <h1 className="text-4xl sm:text-6xl font-black text-slate-900 tracking-tight leading-tight">
