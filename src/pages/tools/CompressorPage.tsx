@@ -334,7 +334,7 @@ export function CompressorPage() {
                       <SkeletonPreview
                         mode={viewMode}
                         statusText="Preparing image..."
-                        subText="Zero server uploads • 100% private in-browser WebAssembly"
+                        subText="Your selected image is processed locally in this browser"
                       />
                     )}
                   </div>
