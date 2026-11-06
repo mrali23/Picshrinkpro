@@ -7,7 +7,7 @@ export const TOOLS_DATA: ToolMeta[] = [
     name: 'Compress Image',
     shortName: 'Compressor',
     title: 'Free Image Compressor - Reduce Image File Size Online',
-    description: 'Compress JPG, PNG, and WebP images online without losing quality. Reduce file size up to 90% for free with 100% private browser-based processing.',
+    description: 'Compress JPG, PNG, and WebP images in your browser. Choose a quality level to balance output size and visual detail; results vary by image and format.',
     iconName: 'Minimize2',
     color: 'from-blue-500 to-indigo-600',
     badge: 'Popular',
@@ -15,11 +15,11 @@ export const TOOLS_DATA: ToolMeta[] = [
     faqs: [
       {
         question: 'Does compressing images reduce image visual quality?',
-        answer: 'PicShrink uses smart perceptual lossy & lossless canvas compression algorithms. At 75-85% quality, file size is reduced by up to 80% while retaining crisp visual fidelity imperceptible to human eyes.'
+        answer: 'Compression results depend on the image, output format, and quality setting. JPEG and lossy WebP can reduce file size by discarding image data; PNG output may be larger or smaller depending on the source. Preview the result before downloading.'
       },
       {
         question: 'Are my private photos uploaded to any remote server?',
-        answer: 'No! All compression happens 100% inside your browser using HTML5 Canvas API and WebAssembly. Your photos never leave your device, ensuring maximum speed and complete privacy.'
+        answer: 'The selected image is processed locally in your browser by the compressor. The page may still load scripts, fonts, analytics, ads, or other site resources over the network; see the Privacy Policy for those services.'
       },
       {
         question: 'Can I compress multiple images at once and download as a ZIP?',
@@ -33,7 +33,7 @@ export const TOOLS_DATA: ToolMeta[] = [
     name: 'Background Remover',
     shortName: 'BG Remover',
     title: 'Background Remover - Remove Image Background Free',
-    description: 'Remove background from images instantly online for free. Create transparent PNG cutouts with precision edge detection and custom replacement colors.',
+    description: 'Create transparent PNG cutouts with AI subject segmentation or browser-based color-boundary tools. Adjust the result and choose a transparent or solid-color background.',
     iconName: 'Scissors',
     color: 'from-pink-500 to-rose-600',
     badge: 'New',
@@ -109,14 +109,14 @@ export const TOOLS_DATA: ToolMeta[] = [
     name: 'JPG to PNG',
     shortName: 'JPG to PNG',
     title: 'JPG to PNG Converter - Convert JPG to PNG Transparent Free',
-    description: 'Convert JPG images to high quality PNG format in seconds. Free online bulk image converter with lossless conversion, zero watermark, and batch ZIP export.',
+    description: 'Convert JPG images to PNG in your browser. PNG uses lossless encoding for the newly created file, but conversion cannot restore image detail already lost through JPEG compression.',
     iconName: 'FileType2',
     color: 'from-purple-500 to-indigo-600',
     acceptedTypes: 'image/jpeg,image/jpg,.jpg,.jpeg,.jfif',
     faqs: [
       {
         question: 'Why convert JPG to PNG format?',
-        answer: 'PNG is a lossless format ideal for graphics, illustrations, screenshots, and artwork that will undergo further editing without generational compression degradation.'
+        answer: 'PNG uses lossless encoding, supports transparency, and is useful for graphics and screenshots. Converting a JPG to PNG does not restore detail previously discarded by JPEG compression, and the PNG file may be larger.'
       },
       {
         question: 'Does converting JPG to PNG make the background transparent?',
