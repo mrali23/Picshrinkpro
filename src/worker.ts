@@ -425,27 +425,41 @@ function toToolCounts(paths: string[]): Array<{ name: string; count: number }> {
     .slice(0, 5);
 }
 
+/**
+ * Apply the same baseline response protections to static assets, Markdown
+ * responses, and API responses. API routes used to return before these
+ * headers were added, leaving a gap in the Worker-wide security policy.
+ */
+export function withSecurityHeaders(response: Response, pathname: string): Response {
+  const headers = new Headers(response.headers);
+  headers.set('X-Content-Type-Options', 'nosniff');
+  headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  headers.set('X-Frame-Options', 'DENY');
+  headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    headers.set('X-Robots-Tag', 'noindex, nofollow');
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname.startsWith('/api/')) return adminApi(request, env);
+    let response: Response;
 
-    const markdownResponse = await markdownForRequest(request, env);
-    if (markdownResponse) return markdownResponse;
+    if (url.pathname.startsWith('/api/')) {
+      response = await adminApi(request, env);
+    } else {
+      const markdownResponse = await markdownForRequest(request, env);
+      response = markdownResponse ?? await env.ASSETS.fetch(request);
+    }
 
-    const response = await env.ASSETS.fetch(request);
-    const headers = new Headers(response.headers);
-    headers.set('X-Content-Type-Options', 'nosniff');
-    headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-    headers.set('X-Frame-Options', 'DENY');
-    headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-    if (url.pathname === '/admin') headers.set('X-Robots-Tag', 'noindex, nofollow');
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
+    return withSecurityHeaders(response, url.pathname);
   },
 };
 
