@@ -265,6 +265,13 @@ export class AdminData {
       if (!allowed.has(file.type) || file.size < 1 || file.size > 10 * 1024 * 1024) {
         return jsonResponse({ error: 'Only JPEG, PNG, WebP, AVIF, or GIF images up to 10 MB are accepted.' }, 400);
       }
+      const header = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+      const signatureValid = file.type === 'image/jpeg' ? header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff
+        : file.type === 'image/png' ? header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4e && header[3] === 0x47
+        : file.type === 'image/gif' ? String.fromCharCode(...header.slice(0,3)) === 'GIF'
+        : file.type === 'image/webp' ? String.fromCharCode(...header.slice(0,4)) === 'RIFF' && String.fromCharCode(...header.slice(8,12)) === 'WEBP'
+        : file.type === 'image/avif' ? String.fromCharCode(...header.slice(4,8)) === 'ftyp' && ['avif','avis'].includes(String.fromCharCode(...header.slice(8,12))) : false;
+      if (!signatureValid) return jsonResponse({ error: 'The file content does not match its declared image type.' }, 400);
       const id = `med_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
       const extension = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif', 'image/gif': 'gif' } as Record<string,string>)[file.type];
       const key = `uploads/${id}.${extension}`;
