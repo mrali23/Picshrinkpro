@@ -349,7 +349,7 @@ export class AdminData {
     const state = await this.getState();
     if (request.method === 'GET') return jsonResponse({ sections: state.homepageSections ?? [] }, 200);
     if (request.method !== 'PUT' || !isSameOrigin(request)) return jsonResponse({ error: 'Method not allowed' }, 405);
-    const body = await readJsonBody<{ sections?: unknown }>(request);
+    const body = (await readJsonBody<{ sections?: unknown }>(request)) ?? {};
     if (!Array.isArray(body?.sections) || body.sections.length > 40) return jsonResponse({ error: 'Invalid homepage sections.' }, 400);
     const sections: HomepageSection[] = body.sections.map((value, index) => {
       const item = value as Record<string, unknown>;
