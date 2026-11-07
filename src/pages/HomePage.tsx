@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Minimize2,
@@ -23,6 +24,14 @@ import { FaqSection } from '../components/common/FaqSection';
 import { HeroInteractiveShowcase } from '../components/home/HeroInteractiveShowcase';
 import { TOOLS_DATA } from '../data/toolsData';
 import { LOGO_URL, SITE_NAME, SITE_URL, absoluteUrl } from '../config/site';
+
+interface HomepageSectionConfig { id: string; key: string; title: string; content: string; visible: boolean; position: number; }
+
+const DEFAULT_HOME_SECTIONS: HomepageSectionConfig[] = [
+  { id: 'home_hero', key: 'hero', title: 'Free Online Image Tools That Respect Your Privacy', content: 'Compress, remove backgrounds, resize, crop, and convert JPG, PNG, WebP, and PDF instantly. Free browser-based tools with no watermark; image processing stays on your device.', visible: true, position: 0 },
+  { id: 'home_tools', key: 'tools', title: 'All 9 Free Online Image Tools', content: 'Every tool you need to compress, remove background, filter, enhance, format, and package images—100% free and in-browser.', visible: true, position: 1 },
+  { id: 'home_features', key: 'features', title: 'Engineered for Speed, Privacy & Simplicity', content: 'Why Choose PicShrinkPro', visible: true, position: 2 },
+];
 
 const homeDescription =
   'Free online image tools to compress, remove background, resize, crop, convert JPG PNG WebP and image to PDF. 100% free, no watermark, browser-based private.';
@@ -93,6 +102,19 @@ const homeFaqs = [
 ];
 
 export function HomePage() {
+  const [homepageSections, setHomepageSections] = useState<HomepageSectionConfig[]>(DEFAULT_HOME_SECTIONS);
+  useEffect(() => {
+    let active = true;
+    fetch('/api/homepage-sections', { headers: { Accept: 'application/json' } })
+      .then(async (response) => response.ok ? response.json() as Promise<{ sections: HomepageSectionConfig[] }> : null)
+      .then((result) => { if (active && result?.sections?.length) setHomepageSections(result.sections); })
+      .catch(() => { /* Keep the built-in page content when the API is unavailable. */ });
+    return () => { active = false; };
+  }, []);
+  const section = (key: string) => homepageSections.find((item) => item.key === key);
+  const hero = section('hero');
+  const toolsSection = section('tools');
+  const featuresSection = section('features');
   return (
     <div className="min-h-screen bg-slate-50">
       <SEOHead
@@ -103,7 +125,7 @@ export function HomePage() {
       />
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden pt-12 pb-16 lg:pt-20 lg:pb-24 bg-gradient-to-b from-white to-slate-50 border-b border-slate-200/60">
+      {hero?.visible !== false && <section className="relative overflow-hidden pt-12 pb-16 lg:pt-20 lg:pb-24 bg-gradient-to-b from-white to-slate-50 border-b border-slate-200/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
             {/* Left Column: Heading & CTAs */}
@@ -114,15 +136,11 @@ export function HomePage() {
               </div>
 
               <h1 className="text-4xl sm:text-6xl font-black text-slate-900 tracking-tight leading-tight">
-                Free Online Image Tools{' '}
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">
-                  That Respect Your Privacy
-                </span>
+                {hero?.title || 'Free Online Image Tools That Respect Your Privacy'}
               </h1>
 
               <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
-                Compress, remove backgrounds, resize, crop, and convert JPG, PNG, WebP, and PDF
-                instantly. Free browser-based tools with no watermark; image processing stays on your device, while ordinary site services may still make network requests.
+                {hero?.content || 'Compress, remove backgrounds, resize, crop, and convert JPG, PNG, WebP, and PDF instantly. Free browser-based tools with no watermark; image processing stays on your device, while ordinary site services may still make network requests.'}
               </p>
 
               {/* Quick Action Buttons */}
@@ -172,7 +190,7 @@ export function HomePage() {
             </div>
           </div>
         </div>
-      </section>
+      </section>}
 
       {/* AdSense Top */}
       <div className="max-w-7xl mx-auto px-4">
@@ -180,14 +198,14 @@ export function HomePage() {
       </div>
 
       {/* All Tools Grid Section */}
-      <section className="py-16">
+      {toolsSection?.visible !== false && <section className="py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-12">
             <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-              All 9 Free Online Image Tools
+              {toolsSection?.title || 'All 9 Free Online Image Tools'}
             </h2>
             <p className="mt-3 text-slate-600 text-base sm:text-lg">
-              Every tool you need to compress, remove background, filter, enhance, format, and package images—100% free and in-browser.
+              {toolsSection?.content || 'Every tool you need to compress, remove background, filter, enhance, format, and package images—100% free and in-browser.'}
             </p>
           </div>
 
@@ -232,17 +250,17 @@ export function HomePage() {
             })}
           </div>
         </div>
-      </section>
+      </section>}
 
       {/* Features: Fast, Secure, Free, No Upload */}
-      <section className="py-16 bg-white border-y border-slate-200/80">
+      {featuresSection?.visible !== false && <section className="py-16 bg-white border-y border-slate-200/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-14">
             <span className="text-xs font-extrabold uppercase tracking-wider text-blue-600">
-              Why Choose PicShrink
+              {featuresSection?.content || 'Why Choose PicShrink'}
             </span>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 mt-2">
-              Engineered for Speed, Privacy &amp; Simplicity
+              {featuresSection?.title || 'Engineered for Speed, Privacy & Simplicity'}
             </h2>
           </div>
 
@@ -295,7 +313,7 @@ export function HomePage() {
             </div>
           </div>
         </div>
-      </section>
+      </section>}
 
       {/* How It Works 3 Steps */}
       <section className="py-16">
