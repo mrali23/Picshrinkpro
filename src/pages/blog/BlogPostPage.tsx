@@ -63,6 +63,8 @@ export function BlogPostPage() {
     );
   }
 
+  if (!post) return <NotFoundPage />;
+
   // Schema.org BlogPosting
   const articleSchema = {
     '@context': 'https://schema.org',
