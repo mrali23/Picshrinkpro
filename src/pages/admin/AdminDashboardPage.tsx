@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Activity, BarChart3, Check, Eye, EyeOff, FileText, LogOut, Mail, Save, Settings, ShieldCheck, Users } from 'lucide-react';
+import { Activity, BarChart3, Check, Eye, EyeOff, FileText, Image, LogOut, Mail, Save, Settings, ShieldCheck, Users } from 'lucide-react';
 import { analytics, type AnalyticsEvent } from '../../utils/analytics';
 import { DEFAULT_SITE_SETTINGS, type SiteSettings } from '../../utils/siteSettings';
 
@@ -12,11 +12,12 @@ interface AnalyticsSummary {
   recentEvents: AnalyticsEvent[];
 }
 
-type AdminTab = 'overview' | 'content' | 'inbox' | 'site' | 'settings';
+type AdminTab = 'overview' | 'content' | 'media' | 'inbox' | 'site' | 'settings';
 interface ManagedRedirect { id: string; sourcePath: string; destinationUrl: string; statusCode: 301 | 302 | 307 | 308; active: boolean; createdAt: number; }
 interface ManagedSection { id: string; key: string; title: string; content: string; visible: boolean; position: number; updatedAt: number; }
 interface ActivityEntry { id: string; actor: string; action: string; resource: string; resourceId?: string; createdAt: number; }
 interface BackupEntry { id: string; label: string; createdAt: number; }
+interface MediaAsset { id: string; key: string; name: string; type: string; size: number; createdAt: number; }
 interface ManagedContent { id: string; title: string; slug: string; excerpt: string; body: string; status: 'draft' | 'published' | 'archived'; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; createdAt: number; updatedAt: number; publishedAt?: number; version: number; }
 
 interface ContactMessage {
@@ -54,6 +55,9 @@ function AdminDashboardContent() {
   const [sections, setSections] = useState<ManagedSection[]>([]);
   const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
+  const [selectedMediaFile, setSelectedMediaFile] = useState<File | null>(null);
+  const [mediaLoading, setMediaLoading] = useState(false);
   const [redirectDraft, setRedirectDraft] = useState({ sourcePath: '', destinationUrl: '', statusCode: '301' });
   const [editingContentId, setEditingContentId] = useState<string | null>(null);
   const [contentDraft, setContentDraft] = useState({ title: '', slug: '', excerpt: '', body: '', status: 'draft' as 'draft' | 'published', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '' });
@@ -110,6 +114,18 @@ function AdminDashboardContent() {
     }, 10_000);
     return () => window.clearInterval(timer);
   }, [authenticated, loadAdminData]);
+
+
+  useEffect(() => {
+    if (tab !== 'media' || !authenticated) return;
+    let active = true;
+    setMediaLoading(true);
+    requestJson<{ media: MediaAsset[] }>('/api/admin/media')
+      .then((result) => { if (active) setMediaAssets(result.media); })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : 'Media library could not be loaded.'); })
+      .finally(() => { if (active) setMediaLoading(false); });
+    return () => { active = false; };
+  }, [tab, authenticated]);
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -181,6 +197,29 @@ function AdminDashboardContent() {
     }
   };
 
+
+
+  const uploadMedia = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedMediaFile) { setError('Choose an image before uploading.'); return; }
+    const form = new FormData(); form.set('file', selectedMediaFile);
+    try {
+      const result = await requestJson<{ media: MediaAsset }>('/api/admin/media', { method: 'POST', body: form });
+      setMediaAssets((items) => [result.media, ...items]); setSelectedMediaFile(null);
+      const input = document.getElementById('admin-media-file') as HTMLInputElement | null;
+      if (input) input.value = '';
+      setNotice('Image uploaded to the configured R2 bucket.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Image upload failed.'); }
+  };
+
+  const deleteMedia = async (asset: MediaAsset) => {
+    if (!window.confirm('Delete "' + asset.name + '" from the media library?')) return;
+    try {
+      await requestJson('/api/admin/media/' + encodeURIComponent(asset.id), { method: 'DELETE' });
+      setMediaAssets((items) => items.filter((item) => item.id !== asset.id));
+      setNotice('Media asset deleted from R2.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Media asset could not be deleted.'); }
+  };
 
   const resetContentDraft = () => {
     setEditingContentId(null);
@@ -411,6 +450,15 @@ function AdminDashboardContent() {
               <label className="block text-sm font-semibold text-slate-700">Publication status<select value={contentDraft.status} onChange={(e) => setContentDraft((v) => ({...v,status:e.target.value as 'draft'|'published'}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"><option value="draft">Draft</option><option value="published">Published</option></select></label>
               <div className="flex flex-wrap gap-2"><button disabled={busy} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save article'}</button><button type="button" onClick={resetContentDraft} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600">Clear</button></div>
             </form>
+          </section>
+        ) : tab === 'media' ? (
+          <section className="space-y-5">
+            <div><h2 className="text-xl font-bold text-slate-900">Media library</h2><p className="mt-1 text-sm text-slate-500">Upload, preview, and remove image assets stored in your Cloudflare R2 bucket. Maximum file size: 10 MB.</p></div>
+            <form onSubmit={uploadMedia} className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center">
+              <input id="admin-media-file" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/gif" onChange={(e) => setSelectedMediaFile(e.target.files?.[0] ?? null)} className="min-w-0 flex-1 text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-blue-700"/>
+              <button disabled={!selectedMediaFile} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">Upload image</button>
+            </form>
+            {mediaLoading ? <p className="py-10 text-center text-sm text-slate-500">Loading media library…</p> : mediaAssets.length ? <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">{mediaAssets.map((asset) => <article key={asset.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><img src={'/api/admin/media/' + encodeURIComponent(asset.id)} alt={asset.name} loading="lazy" className="aspect-square w-full bg-slate-100 object-contain"/><div className="space-y-2 p-3"><p className="truncate text-xs font-semibold text-slate-800" title={asset.name}>{asset.name}</p><p className="text-[11px] text-slate-500">{(asset.size / 1024).toFixed(1)} KB · {asset.type.replace('image/','').toUpperCase()}</p><button onClick={() => deleteMedia(asset)} className="text-xs font-semibold text-rose-600 hover:underline">Delete asset</button></div></article>)}</div> : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center"><Image className="mx-auto text-slate-400" size={30}/><h3 className="mt-3 font-semibold text-slate-800">No media uploaded</h3><p className="mt-1 text-sm text-slate-500">Choose an image above to populate the library.</p></div>}
           </section>
         ) : tab === 'inbox' ? (
           <section className="space-y-4">
