@@ -250,7 +250,7 @@ export class AdminData {
 
 
   private async handleMedia(request: Request): Promise<Response> {
-    const actor = this.getSessionUser(request);
+    const actor = await this.getSessionUser(request);
     if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
     if (!this.mediaBucket) return jsonResponse({ error: 'Media storage is not configured. Bind an R2 bucket named MEDIA.' }, 503);
     const state = await this.getState();
@@ -303,14 +303,14 @@ export class AdminData {
   }
 
   private async handleActivity(request: Request): Promise<Response> {
-    if (!this.getSessionUser(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (!await this.getSessionUser(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
     if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
     const state = await this.getState();
     return jsonResponse({ activity: (state.activity ?? []).slice(0, 200) }, 200);
   }
 
   private async handleRedirects(request: Request): Promise<Response> {
-    const actor = this.getSessionUser(request);
+    const actor = await this.getSessionUser(request);
     if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
     const state = await this.getState();
     const url = new URL(request.url);
@@ -344,7 +344,7 @@ export class AdminData {
   }
 
   private async handleHomepageSections(request: Request): Promise<Response> {
-    const actor = this.getSessionUser(request);
+    const actor = await this.getSessionUser(request);
     if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
     const state = await this.getState();
     if (request.method === 'GET') return jsonResponse({ sections: state.homepageSections ?? [] }, 200);
@@ -368,7 +368,7 @@ export class AdminData {
   }
 
   private async handleBackups(request: Request): Promise<Response> {
-    const actor = this.getSessionUser(request);
+    const actor = await this.getSessionUser(request);
     if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
     const state = await this.getState();
     const url = new URL(request.url);
@@ -426,7 +426,7 @@ export class AdminData {
   }
 
   private async handleSession(request: Request): Promise<Response> {
-    const authenticated = this.getSessionUser(request) !== undefined;
+    const authenticated = await this.getSessionUser(request) !== undefined;
     return jsonResponse({ authenticated }, 200);
   }
 
@@ -511,7 +511,7 @@ export class AdminData {
   }
 
   private async handleAdminSettings(request: Request): Promise<Response> {
-    const sessionUser = this.getSessionUser(request);
+    const sessionUser = await this.getSessionUser(request);
     if (!sessionUser) {
       return jsonResponse({ error: 'Unauthorized' }, 401);
     }
@@ -535,7 +535,7 @@ export class AdminData {
   }
 
   private async handleAnalytics(request: Request): Promise<Response> {
-    const sessionUser = this.getSessionUser(request);
+    const sessionUser = await this.getSessionUser(request);
     if (!sessionUser) {
       return jsonResponse({ error: 'Unauthorized' }, 401);
     }
@@ -601,7 +601,7 @@ export class AdminData {
   }
 
   private async handleAdminMessages(request: Request): Promise<Response> {
-    if (!this.getSessionUser(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (!await this.getSessionUser(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
     const state = await this.getState();
     if (request.method === 'GET') {
       return jsonResponse({ messages: (state.messages ?? []).slice(0, 200) }, 200);
