@@ -1311,7 +1311,7 @@ const worker = {
       const staticXml = staticSitemap.ok ? await staticSitemap.text() : '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>';
       const contentResponse = await adminApi(new Request(new URL('/api/sitemap-content', url), { method: 'GET' }), env);
       const payload = contentResponse.ok ? await contentResponse.json() as { content?: Array<{ slug: string; updatedAt: number }> } : { content: [] };
-      const entries = (payload.content ?? []).map((item) => {
+      const entries = (payload.content ?? []).filter((item) => !staticXml.includes(`${url.origin}/blog/${encodeURIComponent(item.slug)}`)).map((item) => {
         const loc = `${url.origin}/blog/${encodeURIComponent(item.slug)}`;
         const lastmod = new Date(item.updatedAt).toISOString().slice(0, 10);
         return `  <url><loc>${escapeXml(loc)}</loc><lastmod>${lastmod}</lastmod></url>`;
