@@ -48,10 +48,14 @@ test('admin endpoints require a valid session and save site settings', async () 
   const app = createTestApp();
   const initialSession = await app.fetch('/api/admin/session');
   assert.equal(initialSession.status, 200);
+  assert.equal(initialSession.headers.get('X-Content-Type-Options'), 'nosniff');
+  assert.equal(initialSession.headers.get('X-Frame-Options'), 'DENY');
+  assert.ok(initialSession.headers.get('Strict-Transport-Security'));
   assert.deepEqual(await initialSession.json(), { authenticated: false });
 
   const unauthorized = await app.fetch('/api/admin/settings');
   assert.equal(unauthorized.status, 401);
+  assert.equal(unauthorized.headers.get('X-Content-Type-Options'), 'nosniff');
 
   const login = await app.fetch('/api/admin/login', {
     method: 'POST',
