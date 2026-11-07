@@ -69,6 +69,7 @@ interface AdminState {
   media?: MediaAsset[];
   revokedSessions?: string[];
   users?: AdminUserRecord[];
+  loginAttempts?: Array<{ key: string; count: number; firstAt: number }>;
 }
 
 interface StorageLike {
@@ -95,7 +96,6 @@ export class AdminData {
   private readonly storage: StorageLike;
   private readonly secrets: AdminSecrets;
   private readonly mediaBucket?: R2BucketLike;
-  private readonly loginFailures = new Map<string, { count: number; firstAt: number }>();
 
   /**
    * Cloudflare constructs Durable Objects as `new AdminData(ctx, env)`, so the
@@ -518,16 +518,18 @@ export class AdminData {
     if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
     if (!this.isLoginConfigured()) return jsonResponse({ error: 'Admin login is not configured.' }, 503);
 
-    const clientKey = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+    const clientKey = createHash('sha256').update(request.headers.get('CF-Connecting-IP') ?? 'unknown').digest('hex');
     const now = Date.now();
-    const record = this.loginFailures.get(clientKey);
-    if (record && now - record.firstAt < LOGIN_WINDOW_MS && record.count >= MAX_LOGIN_FAILURES) {
+    const state = await this.getState();
+    state.loginAttempts = (state.loginAttempts ?? []).filter((attempt) => now - attempt.firstAt < LOGIN_WINDOW_MS);
+    const record = state.loginAttempts.find((attempt) => attempt.key === clientKey);
+    if (record && record.count >= MAX_LOGIN_FAILURES) {
+      await this.storage.put('admin-state', state);
       return jsonResponse({ error: 'Too many login attempts. Try again later.' }, 429);
     }
     const body = await readJsonBody<{ username?: unknown; password?: unknown }>(request);
     const username = typeof body?.username === 'string' ? body.username.trim() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
-    const state = await this.getState();
     let user = (state.users ?? []).find((item) => item.username.toLowerCase() === username.toLowerCase() && item.active);
     if (!user && !(state.users ?? []).length &&
         safeEqual(username, this.secrets.ADMIN_USERNAME as string) &&
@@ -541,14 +543,16 @@ export class AdminData {
     }
 
     if (!user) {
-      if (!record || now - record.firstAt >= LOGIN_WINDOW_MS) this.loginFailures.set(clientKey, { count: 1, firstAt: now });
-      else record.count += 1;
+      if (record) record.count += 1;
+      else state.loginAttempts.push({ key: clientKey, count: 1, firstAt: now });
+      await this.storage.put('admin-state', state);
       return jsonResponse({ error: 'Invalid login credentials' }, 401);
     }
 
     user.lastLoginAt = now;
     await this.storage.put('admin-state', state);
-    this.loginFailures.delete(clientKey);
+    state.loginAttempts = (state.loginAttempts ?? []).filter((attempt) => attempt.key !== clientKey);
+    await this.storage.put('admin-state', state);
     const sessionToken = createSessionToken(user.username, user.role, user.sessionVersion ?? 1, this.secrets.SESSION_SECRET as string);
     return new Response(JSON.stringify({ authenticated: true, username: user.username, role: user.role }), {
       status: 200,
@@ -745,6 +749,7 @@ export class AdminData {
       if (!Array.isArray(state.media)) state.media = [];
       if (!Array.isArray(state.revokedSessions)) state.revokedSessions = [];
       if (!Array.isArray(state.users)) state.users = [];
+      if (!Array.isArray(state.loginAttempts)) state.loginAttempts = [];
       return state;
     }
 
@@ -756,7 +761,7 @@ export class AdminData {
         { id: 'home_hero', key: 'hero', title: 'Hero section', content: 'Homepage hero content configuration', visible: true, position: 0, updatedAt: Date.now() },
         { id: 'home_tools', key: 'tools', title: 'Image tools', content: 'Homepage tools section configuration', visible: true, position: 1, updatedAt: Date.now() },
         { id: 'home_features', key: 'features', title: 'Why PicShrinkPro', content: 'Homepage features section configuration', visible: true, position: 2, updatedAt: Date.now() },
-      ], backups: [], media: [], revokedSessions: [], users: [],
+      ], backups: [], media: [], revokedSessions: [], users: [], loginAttempts: [],
     };
     await this.storage.put('admin-state', freshState);
     return freshState;
