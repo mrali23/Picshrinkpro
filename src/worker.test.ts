@@ -121,6 +121,25 @@ test('analytics events update shared live dashboard metrics', async () => {
 });
 
 
+
+test('admin logout clears the secure session cookie', async () => {
+  const app = createTestApp();
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const before = await app.fetch('/api/admin/session', { headers: { Cookie: cookie } });
+  assert.deepEqual(await before.json(), { authenticated: true });
+
+  const logout = await app.fetch('/api/admin/logout', {
+    method: 'POST',
+    headers: { Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: '{}',
+  });
+  assert.equal(logout.status, 200);
+  assert.match(logout.headers.get('Set-Cookie') ?? '', /Max-Age=0/);
+  const after = await app.fetch('/api/admin/session');
+  assert.deepEqual(await after.json(), { authenticated: false });
+});
+
 test('contact form submissions are persisted and manageable from the authenticated inbox', async () => {
   const app = createTestApp();
   const submission = await app.fetch('/api/contact', {
