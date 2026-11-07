@@ -553,6 +553,7 @@ export class AdminData {
     const username = typeof body?.username === 'string' ? body.username.trim() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
     let user = (state.users ?? []).find((item) => item.username.toLowerCase() === username.toLowerCase() && item.active);
+    let passwordChecked = false;
     if (!user && !(state.users ?? []).length &&
         safeEqual(username, this.secrets.ADMIN_USERNAME as string) &&
         safeEqual(password, this.secrets.ADMIN_PASSWORD as string)) {
@@ -560,9 +561,11 @@ export class AdminData {
       user = { id: 'usr_root', username, email: '', ...passwordRecord, role: 'admin', active: true, createdAt: now, lastLoginAt: now, sessionVersion: 1 };
       state.users = [user];
       await this.storage.put('admin-state', state);
-    } else if (user && !(await verifyAdminPassword(password, user.passwordSalt, user.passwordHash))) {
-      user = undefined;
+    } else if (user) {
+      passwordChecked = true;
+      if (!(await verifyAdminPassword(password, user.passwordSalt, user.passwordHash))) user = undefined;
     }
+    if (!user && !passwordChecked && (state.users ?? []).length) await hashAdminPassword(password);
 
     if (!user) {
       if (record) record.count += 1;
