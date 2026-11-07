@@ -100,6 +100,7 @@ export class AdminData {
     if (path === '/api/settings') {
       return this.handleGetPublicSettings();
     }
+    if (path === '/api/redirect/resolve') return this.handleResolveRedirect(request);
 
     if (path === '/api/analytics/track') {
       return this.handleTrack(request);
@@ -310,7 +311,8 @@ export class AdminData {
     if (request.method === 'POST' && url.pathname === '/api/admin/backups') {
       if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
       const body = await readJsonBody<{ label?: unknown }>(request);
-      const snapshot = { ...state } as Omit<AdminState, 'backups'>;
+      const { backups: previousBackups, ...snapshot } = state;
+      void previousBackups;
       const backup = { id: `bkp_${Date.now().toString(36)}`, label: typeof body?.label === 'string' ? body.label.slice(0,100) : 'Manual backup', createdAt: Date.now(), snapshot };
       state.backups = [backup, ...(state.backups ?? [])].slice(0, 20);
       await this.storage.put('admin-state', state);
@@ -328,6 +330,15 @@ export class AdminData {
       return jsonResponse({ restored: true }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+
+  private async handleResolveRedirect(request: Request): Promise<Response> {
+    if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+    const requestedPath = new URL(request.url).searchParams.get('path') ?? '';
+    const state = await this.getState();
+    const redirect = (state.redirects ?? []).find((item) => item.active && item.sourcePath === requestedPath);
+    if (!redirect) return jsonResponse({ found: false }, 404);
+    return jsonResponse({ found: true, destinationUrl: redirect.destinationUrl, statusCode: redirect.statusCode }, 200);
   }
 
   private async handleGetPublicSettings(): Promise<Response> {
@@ -775,8 +786,14 @@ const worker = {
     if (url.pathname.startsWith('/api/')) {
       response = await adminApi(request, env);
     } else {
-      const markdownResponse = await markdownForRequest(request, env);
-      response = markdownResponse ?? await env.ASSETS.fetch(request);
+      const redirectResponse = request.method === 'GET' ? await adminApi(new Request(new URL(`/api/redirect/resolve?path=${encodeURIComponent(url.pathname)}`, url), { method: 'GET' }), env) : undefined;
+      if (redirectResponse?.ok) {
+        const redirect = await redirectResponse.json() as { destinationUrl: string; statusCode: number };
+        response = Response.redirect(new URL(redirect.destinationUrl, url).toString(), redirect.statusCode);
+      } else {
+        const markdownResponse = await markdownForRequest(request, env);
+        response = markdownResponse ?? await env.ASSETS.fetch(request);
+      }
     }
 
     return withSecurityHeaders(response, url.pathname);
