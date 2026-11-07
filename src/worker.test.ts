@@ -158,7 +158,7 @@ test('admin user management hashes passwords and enforces editor/viewer roles', 
   });
   assert.equal(disable.status, 200);
   const revokedSession = await app.fetch('/api/admin/session', { headers: { Cookie: editorCookie } });
-  assert.deepEqual(await revokedSession.json(), { authenticated: false, username: undefined, role: undefined });
+  assert.deepEqual(await revokedSession.json(), { authenticated: false });
 });
 
 test('CMS supports draft creation, versioned editing, publishing, and public reads', async () => {
