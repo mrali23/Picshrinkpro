@@ -939,7 +939,7 @@ function defaultHomepageSections(): HomepageSection[] {
 }
 
 function slugify(value: string): string {
-  return value.toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 160);
+  return value.toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 160);
 }
 
 function clampString(value: unknown, fallback: string, maxLength = 300): string {
