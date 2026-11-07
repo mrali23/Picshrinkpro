@@ -576,6 +576,7 @@ export class AdminData {
     await this.storage.put('admin-state', state);
     state.loginAttempts = (state.loginAttempts ?? []).filter((attempt) => attempt.key !== clientKey);
     await this.storage.put('admin-state', state);
+    await this.recordActivity(user.username, 'login', 'admin_session');
     const sessionToken = createSessionToken(user.username, user.role, user.sessionVersion ?? 1, this.secrets.SESSION_SECRET as string);
     return new Response(JSON.stringify({ authenticated: true, username: user.username, role: user.role }), {
       status: 200,
@@ -590,6 +591,7 @@ export class AdminData {
   private async handleLogout(request: Request): Promise<Response> {
     if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
     if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+    const actor = await this.getSessionUser(request);
     const cookieValue = request.headers.get('Cookie') ?? '';
     const match = cookieValue.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
     if (match) {
@@ -598,6 +600,7 @@ export class AdminData {
       state.revokedSessions = [...(state.revokedSessions ?? []), tokenHash].slice(-2000);
       await this.storage.put('admin-state', state);
     }
+    if (actor) await this.recordActivity(actor.username, 'logout', 'admin_session');
     return new Response(JSON.stringify({ authenticated: false }), {
       status: 200,
       headers: {
@@ -627,6 +630,7 @@ export class AdminData {
       const body = await readJsonBody<unknown>(request);
       const nextSettings = sanitizeSettings(body);
       await this.saveSettings(nextSettings);
+      await this.recordActivity(sessionUser.username, 'update', 'site_settings');
       return jsonResponse(nextSettings, 200);
     }
 
@@ -696,6 +700,7 @@ export class AdminData {
     };
     state.messages = [entry, ...(state.messages ?? [])].slice(0, 1000);
     await this.storage.put('admin-state', state);
+    await this.recordActivity('public', 'submit', 'contact_message', entry.id);
     return jsonResponse({ accepted: true, id: entry.id }, 201);
   }
 
@@ -718,6 +723,7 @@ export class AdminData {
       if (!target) return jsonResponse({ error: 'Message not found.' }, 404);
       target.status = body.status as ContactMessage['status'];
       await this.storage.put('admin-state', state);
+      await this.recordActivity(actor.username, 'update', 'contact_message', target.id);
       return jsonResponse({ updated: true, message: target }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
