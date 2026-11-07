@@ -107,7 +107,7 @@ export class AdminData {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (path.startsWith('/api/content/')) return this.handlePublicContent(request);
+    if (path === '/api/content' || path.startsWith('/api/content/')) return this.handlePublicContent(request);
     if (path === '/api/settings') {
       return this.handleGetPublicSettings();
     }
@@ -676,7 +676,12 @@ export class AdminData {
     const freshState: AdminState = {
       settings: { ...DEFAULT_SITE_SETTINGS },
       events: [],
-      messages: [], content: [], activity: [], redirects: [], homepageSections: [], backups: [], media: [], revokedSessions: [],
+      messages: [], content: [], activity: [], redirects: [],
+      homepageSections: [
+        { id: 'home_hero', key: 'hero', title: 'Hero section', content: 'Homepage hero content configuration', visible: true, position: 0, updatedAt: Date.now() },
+        { id: 'home_tools', key: 'tools', title: 'Image tools', content: 'Homepage tools section configuration', visible: true, position: 1, updatedAt: Date.now() },
+        { id: 'home_features', key: 'features', title: 'Why PicShrinkPro', content: 'Homepage features section configuration', visible: true, position: 2, updatedAt: Date.now() },
+      ], backups: [], media: [], revokedSessions: [],
     };
     await this.storage.put('admin-state', freshState);
     return freshState;
