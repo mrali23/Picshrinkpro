@@ -103,3 +103,28 @@ The following code is now present in the feature branch:
 - Automated tests have been added for CMS, redirect, backup, contact and session workflows, but have not yet been executed in a local/CI environment.
 
 Do not treat this branch as a production-ready release until the outstanding items above are addressed and the build, tests, Cloudflare preview, browser regression, SEO crawl and rollback checks pass.
+
+## Phase 2 implementation update
+
+Additional implementation now present in `feat/admin-control-center-phase-2`:
+
+- The homepage's hero, tools and feature sections load published configuration from a public-safe Worker endpoint. Admin visibility and text edits now affect the public homepage.
+- CMS articles can be scheduled. A Cloudflare Cron trigger runs every minute and publishes due articles through a Worker-internal endpoint protected by the Worker session secret.
+- Published CMS articles are added to the runtime XML sitemap. Editors can opt individual articles out of the sitemap.
+- Managed CMS article routes are served as crawler-readable HTML with title, description, canonical URL, Open Graph/Twitter metadata, BlogPosting JSON-LD and article body content. The response uses the existing site's built CSS when available.
+- CMS revision snapshots are created on initial save and before each edit. Editors can inspect revision metadata and restore a prior version as a draft; a stale-version check prevents overwriting concurrent edits.
+- Media records support folder assignment, filename editing and accessible alt text in addition to R2 upload, preview and deletion.
+- Slug normalization uses Unicode mark removal and preserves ordinary letters such as `u`; a regression was caught and covered by the scheduled-publishing test.
+
+The GitHub Actions build pipeline has passed type-checking, automated tests, the production Vite/prerender build, SEO validation and Worker configuration/bundle validation on the current phase-2 branch head.
+
+### Remaining release blockers
+
+- The D1 migration is prepared but no D1 database/binding is configured. Admin APIs still use the existing Durable Object JSON state and have not been migrated to normalized D1 transactions.
+- The R2 bucket `picshrinkpro-media` must be created in the target Cloudflare account. The application has not been deployed against a provisioned R2 bucket or verified with live uploads.
+- Backup/restore currently snapshots application state, not independent copies of R2 object bytes. Media object disaster recovery and off-account backups remain unimplemented.
+- Navigation menu editing, WebSocket realtime updates, session/device management UI, TOTP, password reset and more detailed security event logs remain outstanding.
+- Managed article pages are server-rendered by the Worker as a safe HTML document, but full React SSR parity and a visual cross-browser review of the dynamic article template are still required.
+- Full browser E2E, accessibility, mobile visual regression, Cloudflare preview, production smoke tests and rollback validation remain outstanding.
+
+The passing CI checks are not a substitute for Cloudflare account provisioning or production preview testing. Do not merge/deploy until the infrastructure blockers and release checks are completed.
