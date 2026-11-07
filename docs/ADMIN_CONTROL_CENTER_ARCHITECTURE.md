@@ -85,7 +85,7 @@ The following code is now present in the feature branch:
 - SEO redirect records are validated as local paths and are applied by the Worker before static asset serving.
 - Homepage section configuration records have an authenticated read/write API and an admin editor. The current public homepage components are not yet connected to these configuration records.
 - Activity records are generated for implemented administrative mutations.
-- Durable Object state snapshots can be created and restored. These snapshots do not include R2 objects or a D1 database.
+- Durable Object state snapshots can be created and restored. Phase 2 also copies associated R2 media objects into a backup prefix and restores them with the metadata; D1 is not yet provisioned.
 - An R2-backed media API and responsive admin media library are implemented. Uploads are limited to JPEG, PNG, WebP, AVIF and GIF, capped at 10 MB, and checked against file signatures.
 - Logout revokes the current signed session token in Durable Object state; the browser cookie is also cleared.
 - The Wrangler configuration now declares an R2 binding named `MEDIA` for bucket `picshrinkpro-media`.
@@ -98,8 +98,34 @@ The following code is now present in the feature branch:
 - Homepage section configuration is stored but does not yet alter the public homepage layout.
 - Per-user accounts and admin/editor/viewer RBAC are implemented in Durable Object state. The first account is bootstrapped from Worker secrets; subsequent accounts use PBKDF2-SHA-256 password hashes and server-enforced roles. Admins manage accounts from the Users & roles tab. A secure self-service password change/reset flow and TOTP are still outstanding.
 - Login throttling still uses in-memory Worker state rather than a persistent shared rate limiter. TOTP, session/device management UI, password reset and dedicated security-event reporting remain outstanding.
-- Backup/restore currently covers Durable Object application state only. It does not back up or restore R2 media objects, D1 data, or off-account disaster recovery.
+- Backup/restore includes application state and R2 media object copies, but does not yet include D1 data or off-account disaster recovery.
 - Full content revisions, categories/tags, scheduled publishing, rich-text editing, media transformations, CSV exports, and realtime WebSocket updates remain outstanding.
-- Automated tests have been added for CMS, redirect, backup, contact and session workflows, but have not yet been executed in a local/CI environment.
+- Automated tests cover CMS, redirects, scheduled publishing, sitemap, navigation, backups, contact, media restore and session workflows; the GitHub Actions build pipeline is used for verification.
 
 Do not treat this branch as a production-ready release until the outstanding items above are addressed and the build, tests, Cloudflare preview, browser regression, SEO crawl and rollback checks pass.
+
+## Phase 2 implementation update
+
+Additional implementation now present in `feat/admin-control-center-phase-2`:
+
+- The homepage's hero, tools and feature sections load published configuration from a public-safe Worker endpoint. Admin visibility and text edits now affect the public homepage.
+- Header navigation links are editable in the Website Builder and are delivered to desktop/mobile navigation through a public-safe endpoint. Only same-site paths are accepted.
+- CMS articles can be scheduled. A Cloudflare Cron trigger runs every minute and publishes due articles through a Worker-internal endpoint protected by the Worker session secret.
+- Published CMS articles are added to the runtime XML sitemap. Editors can opt individual articles out of the sitemap.
+- Managed CMS article routes are served as crawler-readable HTML with title, description, canonical URL, Open Graph/Twitter metadata, BlogPosting JSON-LD and article body content. The response uses the existing site's built CSS when available.
+- CMS revision snapshots are created on initial save and before each edit. Editors can inspect revision metadata and restore a prior version as a draft; a stale-version check prevents overwriting concurrent edits.
+- Media records support folder assignment, filename editing and accessible alt text in addition to R2 upload, preview and deletion.
+- Slug normalization uses Unicode mark removal and preserves ordinary letters such as `u`; a regression was caught and covered by the scheduled-publishing test.
+
+The GitHub Actions build pipeline has passed type-checking, automated tests, the production Vite/prerender build, SEO validation and Worker configuration/bundle validation on the current phase-2 branch head.
+
+### Remaining release blockers
+
+- The D1 migration is prepared but no D1 database/binding is configured. Admin APIs still use the existing Durable Object JSON state and have not been migrated to normalized D1 transactions.
+- The R2 bucket `picshrinkpro-media` must be created in the target Cloudflare account. The application has not been deployed against a provisioned R2 bucket or verified with live uploads.
+- Backup/restore now copies R2 media bytes into per-backup object prefixes and restores them with the application snapshot. D1 backups, off-account replication and disaster-recovery drills remain outstanding.
+- Navigation menu editing, WebSocket realtime updates, session/device management UI, TOTP, password reset and more detailed security event logs remain outstanding.
+- Managed article pages are server-rendered by the Worker as a safe HTML document, but full React SSR parity and a visual cross-browser review of the dynamic article template are still required.
+- Full browser E2E, accessibility, mobile visual regression, Cloudflare preview, production smoke tests and rollback validation remain outstanding.
+
+The passing CI checks are not a substitute for Cloudflare account provisioning or production preview testing. Do not merge/deploy until the infrastructure blockers and release checks are completed.

@@ -24,9 +24,15 @@ const TEST_SECRETS = {
   SESSION_SECRET: 'test-session-secret-with-more-than-thirty-two-characters',
 };
 
-function createTestApp(secrets: Record<string, string> = TEST_SECRETS, assets: Record<string, string> = {}) {
+interface TestMediaBucket {
+  put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string,string> }): Promise<unknown>;
+  get(key: string): Promise<{ body: ReadableStream | null; httpMetadata?: { contentType?: string }; size?: number } | null>;
+  delete(key: string): Promise<void>;
+}
+
+function createTestApp(secrets: Record<string, string> = TEST_SECRETS, assets: Record<string, string> = {}, mediaBucket?: TestMediaBucket) {
   // Mirrors Cloudflare: Durable Objects are constructed as new AdminData(ctx, env)
-  const data = new AdminData({ storage: new MemoryStorage() }, secrets);
+  const data = new AdminData({ storage: new MemoryStorage() }, { ...secrets, MEDIA: mediaBucket });
   const stub = { fetch: (request: Request) => data.fetch(request) };
   const env = {
     ASSETS: {
@@ -36,6 +42,7 @@ function createTestApp(secrets: Record<string, string> = TEST_SECRETS, assets: R
       },
     },
     ADMIN_DATA: { idFromName: () => 'global', get: () => stub },
+    MEDIA: mediaBucket,
     ...secrets,
   };
   return {
@@ -152,6 +159,14 @@ test('admin user management hashes passwords and enforces editor/viewer roles', 
   const privateInbox = await app.fetch('/api/admin/messages', { headers: { Cookie: editorCookie } });
   assert.equal(privateInbox.status, 403);
 
+  const revokeSessions = await app.fetch('/api/admin/users/' + user.id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: rootCookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ revokeSessions: true }),
+  });
+  assert.equal(revokeSessions.status, 200);
+  const revokedEditorSession = await app.fetch('/api/admin/session', { headers: { Cookie: editorCookie } });
+  assert.deepEqual(await revokedEditorSession.json(), { authenticated: false });
+
   const disable = await app.fetch('/api/admin/users/' + user.id, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: rootCookie, Origin: 'https://picshrink.test' },
     body: JSON.stringify({ active: false }),
@@ -189,8 +204,129 @@ test('CMS supports draft creation, versioned editing, publishing, and public rea
   const publicArticle = await app.fetch('/api/content/managed-article');
   assert.equal(publicArticle.status, 200);
   assert.equal((await publicArticle.json() as { content: { status: string } }).content.status, 'published');
+  const articlePage = await app.fetch('/blog/managed-article');
+  assert.equal(articlePage.status, 200);
+  const articleHtml = await articlePage.text();
+  assert.ok(articleHtml.includes('<h1 class="text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl">A Managed Article</h1>'));
+  assert.match(articleHtml, /canonical/);
+  assert.match(articleHtml, /First paragraph/);
   const publicIndex = await app.fetch('/api/content');
   assert.equal((await publicIndex.json() as { content: unknown[] }).content.length, 1);
+});
+
+
+
+
+test('CMS revisions preserve previous content and restore safely as draft', async () => {
+  const app = createTestApp();
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const create = await app.fetch('/api/admin/content', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'Revision Original', slug: 'revision-original', excerpt: 'Original excerpt', body: 'Original body', status: 'draft' }),
+  });
+  const created = (await create.json() as { content: { id: string; version: number } }).content;
+  const edit = await app.fetch('/api/admin/content/' + created.id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'Revision Updated', version: 1 }),
+  });
+  assert.equal(edit.status, 200);
+  const history = await app.fetch('/api/admin/content/' + created.id + '/revisions', { headers: { Cookie: cookie } });
+  const revisions = (await history.json() as { revisions: Array<{ id: string; version: number; title: string }> }).revisions;
+  assert.equal(revisions.length, 2);
+  const original = revisions.find((revision) => revision.version === 1)!;
+  const restore = await app.fetch('/api/admin/content/' + created.id + '/revisions/' + original.id + '/restore', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ version: 2 }),
+  });
+  assert.equal(restore.status, 200);
+  const restored = (await restore.json() as { content: { title: string; status: string; version: number } }).content;
+  assert.equal(restored.title, 'Revision Original');
+  assert.equal(restored.status, 'draft');
+  assert.equal(restored.version, 3);
+});
+
+test('CMS scheduled articles stay private until the authenticated publisher runs', async () => {
+  const app = createTestApp();
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const scheduledAt = Date.now() + 40;
+  const create = await app.fetch('/api/admin/content', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'Scheduled Release', slug: 'scheduled-release', excerpt: 'Later', body: 'Scheduled body', status: 'scheduled', scheduledAt }),
+  });
+  assert.equal(create.status, 201);
+  assert.equal((await app.fetch('/api/content/scheduled-release')).status, 404);
+
+  const unauthorized = await app.fetch('/api/internal/publish-scheduled', { method: 'POST' });
+  assert.equal(unauthorized.status, 401);
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const publish = await app.fetch('/api/internal/publish-scheduled', {
+    method: 'POST', headers: { Authorization: `Bearer ${TEST_SECRETS.SESSION_SECRET}` },
+  });
+  assert.equal(publish.status, 200);
+  assert.equal((await publish.json() as { published: number }).published, 1);
+  const adminIndex = await app.fetch('/api/admin/content', { headers: { Cookie: cookie } });
+  const adminItems = (await adminIndex.json() as { content: Array<{ slug: string; status: string }> }).content;
+  assert.ok(adminItems.some((item) => item.slug === 'scheduled-release' && item.status === 'published'));
+  const publicIndex = await app.fetch('/api/content');
+  const publishedItems = (await publicIndex.json() as { content: Array<{ slug: string }> }).content;
+  assert.ok(publishedItems.some((item) => item.slug === 'scheduled-release'));
+});
+
+
+test('website builder publishes validated navigation links to the public header', async () => {
+  const app = createTestApp();
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const save = await app.fetch('/api/admin/navigation', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ links: [
+      { id: 'nav_custom', label: 'Guides', url: '/blog', visible: true },
+      { id: 'nav_hidden', label: 'Hidden', url: '/about', visible: false },
+    ] }),
+  });
+  assert.equal(save.status, 200);
+  const publicNavigation = await app.fetch('/api/navigation');
+  const links = (await publicNavigation.json() as { links: Array<{ label: string; url: string }> }).links;
+  assert.deepEqual(links.map((item) => [item.label, item.url]), [['Guides', '/blog']]);
+
+  const invalid = await app.fetch('/api/admin/navigation', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ links: [{ label: 'External', url: '//evil.example' }] }),
+  });
+  assert.equal(invalid.status, 400);
+});
+
+test('public homepage sections and sitemap expose only public configuration and published posts', async () => {
+  const staticSitemap = '<?xml version="1.0" encoding="UTF-8"?>\\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://picshrink.test/</loc></url></urlset>';
+  const app = createTestApp(TEST_SECRETS, { '/sitemap.xml': staticSitemap });
+  const homepage = await app.fetch('/api/homepage-sections');
+  assert.equal(homepage.status, 200);
+  assert.equal(homepage.headers.get('Cache-Control'), 'public, max-age=60, stale-while-revalidate=300');
+  const sections = (await homepage.json() as { sections: Array<{ key: string; visible: boolean }> }).sections;
+  assert.deepEqual(sections.map((item) => item.key), ['hero', 'tools', 'features']);
+
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const create = await app.fetch('/api/admin/content', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'Sitemap Managed Article', slug: 'sitemap-managed-article', excerpt: 'Published sitemap test', body: 'Content', status: 'published' }),
+  });
+  assert.equal(create.status, 201);
+  const excluded = await app.fetch('/api/admin/content', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'Hidden Sitemap Article', slug: 'hidden-sitemap-article', excerpt: 'No sitemap', body: 'Content', status: 'published', includeInSitemap: false }),
+  });
+  assert.equal(excluded.status, 201);
+  const sitemap = await app.fetch('/sitemap.xml');
+  assert.equal(sitemap.status, 200);
+  assert.match(sitemap.headers.get('Content-Type') ?? '', /application\/xml/);
+  const xml = await sitemap.text();
+  assert.match(xml, /https:\/\/picshrink.test\/blog\/sitemap-managed-article/);
+  assert.match(xml, /https:\/\/picshrink.test\//);
+  assert.ok(!xml.includes('hidden-sitemap-article'));
 });
 
 test('SEO redirects are validated, listed, and applied by the Worker', async () => {
@@ -225,6 +361,68 @@ test('activity log and backup snapshots are available to authenticated administr
   assert.equal((await backups.json() as { backups: unknown[] }).backups.length, 1);
   const activity = await app.fetch('/api/admin/activity', { headers: { Cookie: cookie } });
   assert.ok((await activity.json() as { activity: Array<{ action: string }> }).activity.some((item) => item.action === 'create'));
+});
+
+
+test('media assets are copied into R2 backups and restored with their metadata', async () => {
+  const objects = new Map<string, { bytes: Uint8Array; contentType: string }>();
+  const bucket: TestMediaBucket = {
+    put: async (key, value, options) => {
+      const bytes = value instanceof ReadableStream
+        ? new Uint8Array(await new Response(value).arrayBuffer())
+        : ArrayBuffer.isView(value)
+          ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+          : new Uint8Array(value);
+      objects.set(key, { bytes, contentType: options?.httpMetadata?.contentType ?? 'application/octet-stream' });
+    },
+    get: async (key) => {
+      const item = objects.get(key);
+      return item ? { body: new Response(item.bytes.buffer as ArrayBuffer).body, httpMetadata: { contentType: item.contentType }, size: item.bytes.length } : null;
+    },
+    delete: async (key) => { objects.delete(key); },
+  };
+  const app = createTestApp(TEST_SECRETS, {}, bucket);
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const form = new FormData();
+  form.set('folder', 'blog');
+  form.set('file', new File([Uint8Array.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])], 'cover.png', { type: 'image/png' }));
+  const upload = await app.fetch('/api/admin/media', { method: 'POST', headers: { Cookie: cookie, Origin: 'https://picshrink.test' }, body: form });
+  assert.equal(upload.status, 201);
+  const asset = (await upload.json() as { media: { id: string; key: string; folder: string } }).media;
+  assert.equal(asset.folder, 'blog');
+  const metadata = await app.fetch('/api/admin/media/' + asset.id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ name: 'Hero image.png', altText: 'PicShrinkPro article cover', folder: 'blog-assets' }),
+  });
+  assert.equal(metadata.status, 200);
+  const updatedAsset = (await metadata.json() as { media: { altText: string; folder: string } }).media;
+  assert.equal(updatedAsset.altText, 'PicShrinkPro article cover');
+  assert.equal(updatedAsset.folder, 'blog-assets');
+
+  const backup = await app.fetch('/api/admin/backups', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ label: 'Media backup' }),
+  });
+  assert.equal(backup.status, 201);
+  const backupResult = (await backup.json() as { backup: { id: string; mediaObjectCount: number } }).backup;
+  assert.equal(backupResult.mediaObjectCount, 1);
+  assert.ok([...objects.keys()].some((key) => key.startsWith('backups/' + backupResult.id + '/')));
+
+  const deletion = await app.fetch('/api/admin/media/' + asset.id, { method: 'DELETE', headers: { Cookie: cookie, Origin: 'https://picshrink.test' } });
+  assert.equal(deletion.status, 200);
+  assert.equal((await app.fetch('/api/admin/media', { headers: { Cookie: cookie } }).then((response) => response.json()) as { media: unknown[] }).media.length, 0);
+
+  const restore = await app.fetch('/api/admin/backups/' + backupResult.id + '/restore', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' }, body: '{}',
+  });
+  assert.equal(restore.status, 200);
+  const media = (await app.fetch('/api/admin/media', { headers: { Cookie: cookie } }).then((response) => response.json()) as { media: Array<{ id: string; folder: string }> }).media;
+  assert.equal(media.length, 1);
+  assert.equal(media[0].id, asset.id);
+  assert.equal(media[0].folder, 'blog-assets');
+  assert.equal((media[0] as { altText?: string }).altText, 'PicShrinkPro article cover');
+  assert.equal((await app.fetch('/media/' + asset.id)).status, 200);
 });
 
 test('admin logout clears the secure session cookie', async () => {

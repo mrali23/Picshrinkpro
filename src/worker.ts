@@ -32,10 +32,11 @@ interface ContactMessage {
 
 interface ManagedContent {
   id: string; title: string; slug: string; excerpt: string; body: string;
-  status: 'draft' | 'published' | 'archived'; seoTitle: string;
-  metaDescription: string; canonicalUrl: string; ogImageUrl: string;
+  status: 'draft' | 'published' | 'scheduled' | 'archived'; scheduledAt?: number; seoTitle: string;
+  metaDescription: string; canonicalUrl: string; ogImageUrl: string; includeInSitemap: boolean;
   createdAt: number; updatedAt: number; publishedAt?: number; version: number;
 }
+interface ContentRevision { id: string; contentId: string; version: number; title: string; slug: string; excerpt: string; body: string; status: ManagedContent['status']; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; createdAt: number; actor: string; }
 interface AdminActivity {
   id: string; actor: string; action: string; resource: string;
   resourceId?: string; createdAt: number;
@@ -44,11 +45,12 @@ interface ManagedRedirect {
   id: string; sourcePath: string; destinationUrl: string;
   statusCode: 301 | 302 | 307 | 308; active: boolean; createdAt: number;
 }
+interface ManagedNavigationLink { id: string; label: string; url: string; visible: boolean; position: number; }
 interface HomepageSection {
   id: string; key: string; title: string; content: string;
   visible: boolean; position: number; updatedAt: number;
 }
-interface MediaAsset { id: string; key: string; name: string; type: string; size: number; createdAt: number; }
+interface MediaAsset { id: string; key: string; name: string; type: string; size: number; altText?: string; folder?: string; createdAt: number; }
 interface R2BucketLike {
   put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string,string> }): Promise<unknown>;
   get(key: string): Promise<{ body: ReadableStream | null; httpMetadata?: { contentType?: string }; size?: number } | null>;
@@ -62,10 +64,12 @@ interface AdminState {
   events: AnalyticsEvent[];
   messages?: ContactMessage[];
   content?: ManagedContent[];
+  contentRevisions?: ContentRevision[];
   activity?: AdminActivity[];
   redirects?: ManagedRedirect[];
   homepageSections?: HomepageSection[];
-  backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups'> }>;
+  navigationLinks?: ManagedNavigationLink[];
+  backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups' | 'users' | 'revokedSessions' | 'loginAttempts'>; mediaCopies: Array<{ sourceKey: string; backupKey: string }> }>;
   media?: MediaAsset[];
   revokedSessions?: string[];
   users?: AdminUserRecord[];
@@ -112,6 +116,10 @@ export class AdminData {
     const path = url.pathname;
 
     if (path === '/api/content' || path.startsWith('/api/content/')) return this.handlePublicContent(request);
+    if (path === '/api/sitemap-content') return this.handleSitemapContent(request);
+    if (path === '/api/internal/publish-scheduled') return this.handleScheduledPublishing(request);
+    if (path === '/api/homepage-sections') return this.handlePublicHomepageSections(request);
+    if (path === '/api/navigation') return this.handlePublicNavigation(request);
     if (path.startsWith('/media/')) return this.handlePublicMedia(request);
     if (path === '/api/settings') {
       return this.handleGetPublicSettings();
@@ -151,6 +159,7 @@ export class AdminData {
       return this.handleAnalytics(request);
     }
 
+    if (/^\/api\/admin\/content\/[^/]+\/revisions(?:\/[^/]+\/restore)?$/.test(path)) return this.handleContentRevisions(request);
     if (path === '/api/admin/content' || path.startsWith('/api/admin/content/')) {
       return this.handleContent(request);
     }
@@ -160,6 +169,7 @@ export class AdminData {
       return this.handleRedirects(request);
     }
     if (path === '/api/admin/homepage-sections') return this.handleHomepageSections(request);
+    if (path === '/api/admin/navigation') return this.handleAdminNavigation(request);
     if (path === '/api/admin/backups' || path.startsWith('/api/admin/backups/')) {
       return this.handleBackups(request);
     }
@@ -174,6 +184,47 @@ export class AdminData {
     activity.unshift({ id: `act_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, actor, action, resource, resourceId, createdAt: Date.now() });
     state.activity = activity.slice(0, 2000);
     await this.storage.put('admin-state', state);
+  }
+
+  private async handleContentRevisions(request: Request): Promise<Response> {
+    const actor = await this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (actor.role === 'viewer') return jsonResponse({ error: 'Forbidden' }, 403);
+    const parts = new URL(request.url).pathname.split('/').filter(Boolean);
+    const contentId = decodeURIComponent(parts[3] ?? '');
+    const revisionId = parts[5] ? decodeURIComponent(parts[5]) : '';
+    const state = await this.getState();
+    const current = (state.content ?? []).find((item) => item.id === contentId);
+    if (!current) return jsonResponse({ error: 'Content not found.' }, 404);
+    if (request.method === 'GET' && !revisionId) {
+      const revisions = (state.contentRevisions ?? []).filter((item) => item.contentId === contentId)
+        .sort((a,b) => b.createdAt-a.createdAt)
+        .map(({id,contentId,version,title,slug,status,createdAt,actor}) => ({id,contentId,version,title,slug,status,createdAt,actor}));
+      return jsonResponse({ revisions }, 200);
+    }
+    if (request.method !== 'POST' || !revisionId || !parts.includes('restore') || !isSameOrigin(request)) {
+      return jsonResponse({ error: 'Method not allowed' }, 405);
+    }
+    const body = (await readJsonBody<{ version?: unknown }>(request)) ?? {};
+    if (typeof body.version === 'number' && body.version !== current.version) {
+      return jsonResponse({ error: 'This article changed in another session. Reload before restoring.', current }, 409);
+    }
+    const revision = (state.contentRevisions ?? []).find((item) => item.id === revisionId && item.contentId === contentId);
+    if (!revision) return jsonResponse({ error: 'Revision not found.' }, 404);
+    const now = Date.now();
+    const currentRevision: ContentRevision = { ...current, id: `rev_${now.toString(36)}_${Math.random().toString(36).slice(2,7)}`, contentId, createdAt: now, actor: actor.username };
+    state.contentRevisions = [...(state.contentRevisions ?? []), currentRevision].slice(-2000);
+    const restored: ManagedContent = {
+      ...current, title: revision.title, slug: revision.slug, excerpt: revision.excerpt, body: revision.body,
+      status: 'draft', scheduledAt: undefined, publishedAt: undefined,
+      seoTitle: revision.seoTitle, metaDescription: revision.metaDescription,
+      canonicalUrl: revision.canonicalUrl, ogImageUrl: revision.ogImageUrl,
+      updatedAt: now, version: current.version + 1,
+    };
+    state.content = (state.content ?? []).map((item) => item.id === contentId ? restored : item);
+    await this.storage.put('admin-state', state);
+    await this.recordActivity(actor.username, 'restore_revision', 'content', contentId);
+    return jsonResponse({ content: restored }, 200);
   }
 
   private async handleContent(request: Request): Promise<Response> {
@@ -201,16 +252,21 @@ export class AdminData {
       const items = state.content ?? [];
       if (items.some((item) => item.slug === slug)) return jsonResponse({ error: 'That URL slug is already in use.' }, 409);
       const now = Date.now();
-      const status = body.status === 'published' ? 'published' : 'draft';
+      const status = body.status === 'published' ? 'published' : body.status === 'scheduled' ? 'scheduled' : 'draft';
+      const scheduledAt = typeof body.scheduledAt === 'number' ? body.scheduledAt : undefined;
+      if (status === 'scheduled' && (!scheduledAt || scheduledAt <= now)) return jsonResponse({ error: 'Choose a future publication date and time.' }, 400);
       const item: ManagedContent = {
         id: `cnt_${now.toString(36)}_${Math.random().toString(36).slice(2,8)}`, title, slug, excerpt, body: contentBody,
-        status, seoTitle: typeof body.seoTitle === 'string' ? body.seoTitle.slice(0, 180) : title,
+        status, scheduledAt: status === 'scheduled' ? scheduledAt : undefined, seoTitle: typeof body.seoTitle === 'string' ? body.seoTitle.slice(0, 180) : title,
         metaDescription: typeof body.metaDescription === 'string' ? body.metaDescription.slice(0, 300) : excerpt,
         canonicalUrl: typeof body.canonicalUrl === 'string' ? body.canonicalUrl.slice(0, 500) : '',
+        includeInSitemap: body.includeInSitemap !== false,
         ogImageUrl: typeof body.ogImageUrl === 'string' ? body.ogImageUrl.slice(0, 1000) : '',
         createdAt: now, updatedAt: now, publishedAt: status === 'published' ? now : undefined, version: 1,
       };
       state.content = [item, ...items];
+      const initialRevision: ContentRevision = { ...item, id: `rev_${now.toString(36)}_initial`, contentId: item.id, createdAt: now, actor: actor.username };
+      state.contentRevisions = [...(state.contentRevisions ?? []), initialRevision].slice(-2000);
       await this.storage.put('admin-state', state);
       await this.recordActivity(actor.username, 'create', 'content', item.id);
       return jsonResponse({ content: item }, 201);
@@ -225,7 +281,9 @@ export class AdminData {
       }
       const nextSlug = typeof body.slug === 'string' ? slugify(body.slug) : current.slug;
       if (items.some((item) => item.id !== id && item.slug === nextSlug)) return jsonResponse({ error: 'That URL slug is already in use.' }, 409);
-      const status = body.status === 'published' || body.status === 'archived' || body.status === 'draft' ? body.status : current.status;
+      const status = body.status === 'published' || body.status === 'scheduled' || body.status === 'archived' || body.status === 'draft' ? body.status : current.status;
+      const scheduledAt = typeof body.scheduledAt === 'number' ? body.scheduledAt : current.scheduledAt;
+      if (status === 'scheduled' && (!scheduledAt || scheduledAt <= Date.now())) return jsonResponse({ error: 'Choose a future publication date and time.' }, 400);
       const updated: ManagedContent = {
         ...current,
         title: typeof body.title === 'string' ? body.title.trim().slice(0,180) : current.title,
@@ -233,13 +291,17 @@ export class AdminData {
         excerpt: typeof body.excerpt === 'string' ? body.excerpt.trim().slice(0,500) : current.excerpt,
         body: typeof body.body === 'string' ? body.body.slice(0,100000) : current.body,
         status,
+        scheduledAt: status === 'scheduled' ? scheduledAt : undefined,
         seoTitle: typeof body.seoTitle === 'string' ? body.seoTitle.slice(0,180) : current.seoTitle,
         metaDescription: typeof body.metaDescription === 'string' ? body.metaDescription.slice(0,300) : current.metaDescription,
         canonicalUrl: body.canonicalUrl === undefined ? current.canonicalUrl : sanitizeCanonicalUrl(body.canonicalUrl),
+        includeInSitemap: typeof body.includeInSitemap === 'boolean' ? body.includeInSitemap : current.includeInSitemap !== false,
         ogImageUrl: typeof body.ogImageUrl === 'string' ? body.ogImageUrl.slice(0,1000) : current.ogImageUrl,
         updatedAt: Date.now(), publishedAt: status === 'published' ? (current.publishedAt ?? Date.now()) : undefined,
         version: current.version + 1,
       };
+      const revision: ContentRevision = { ...current, id: `rev_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`, contentId: current.id, createdAt: Date.now(), actor: actor.username };
+      state.contentRevisions = [...(state.contentRevisions ?? []), revision].slice(-2000);
       items[index] = updated;
       state.content = items;
       await this.storage.put('admin-state', state);
@@ -285,7 +347,9 @@ export class AdminData {
       const extension = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif', 'image/gif': 'gif' } as Record<string,string>)[file.type];
       const key = `uploads/${id}.${extension}`;
       await this.mediaBucket.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { uploadedBy: actor.username } });
-      const asset: MediaAsset = { id, key, name: file.name.slice(0,200), type: file.type, size: file.size, createdAt: Date.now() };
+      const folderValue = form?.get('folder');
+      const folder = typeof folderValue === 'string' ? folderValue.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '').slice(0,60) : '';
+      const asset: MediaAsset = { id, key, name: file.name.slice(0,200), type: file.type, size: file.size, altText: '', folder, createdAt: Date.now() };
       state.media = [asset, ...(state.media ?? [])].slice(0, 1000);
       await this.storage.put('admin-state', state);
       await this.recordActivity(actor.username, 'upload', 'media', id);
@@ -297,6 +361,21 @@ export class AdminData {
       const object = await this.mediaBucket.get(asset.key);
       if (!object?.body) return jsonResponse({ error: 'Media object is unavailable.' }, 404);
       return new Response(object.body, { status: 200, headers: { 'Content-Type': object.httpMetadata?.contentType ?? asset.type, 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' } });
+    }
+    if (request.method === 'PATCH' && id) {
+      const asset = (state.media ?? []).find((item) => item.id === id);
+      if (!asset) return jsonResponse({ error: 'Media asset not found.' }, 404);
+      const body = (await readJsonBody<{ name?: unknown; altText?: unknown; folder?: unknown }>(request)) ?? {};
+      if (typeof body.name === 'string') {
+        const name = body.name.trim();
+        if (!name || name.length > 200) return jsonResponse({ error: 'Media filename must contain 1–200 characters.' }, 400);
+        asset.name = name;
+      }
+      if (typeof body.altText === 'string') asset.altText = body.altText.trim().slice(0, 300);
+      if (typeof body.folder === 'string') asset.folder = body.folder.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '').slice(0,60);
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor.username, 'update', 'media', id);
+      return jsonResponse({ media: asset }, 200);
     }
     if (request.method === 'DELETE' && id) {
       const asset = (state.media ?? []).find((item) => item.id === id);
@@ -353,7 +432,11 @@ export class AdminData {
       }
       target.role = role; target.active = active; target.sessionVersion = (target.sessionVersion ?? 1) + 1;
       if (typeof body.email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) target.email = body.email.trim().toLowerCase();
-      if (typeof body.password === 'string' && body.password.length >= 12) Object.assign(target, await hashAdminPassword(body.password));
+      if (typeof body.password === 'string' && body.password.length >= 12) {
+        Object.assign(target, await hashAdminPassword(body.password));
+        target.sessionVersion = (target.sessionVersion ?? 1) + 1;
+      }
+      if (body.revokeSessions === true) target.sessionVersion = (target.sessionVersion ?? 1) + 1;
       await this.storage.put('admin-state', state);
       await this.recordActivity(actor.username, 'update', 'admin_user', id);
       return jsonResponse({ updated: true }, 200);
@@ -415,6 +498,52 @@ export class AdminData {
     return jsonResponse({ error: 'Method not allowed' }, 405);
   }
 
+  private async handlePublicHomepageSections(request: Request): Promise<Response> {
+    if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+    const state = await this.getState();
+    return new Response(JSON.stringify({ sections: state.homepageSections ?? defaultHomepageSections() }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'public, max-age=60, stale-while-revalidate=300',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  }
+
+  private async handlePublicNavigation(request: Request): Promise<Response> {
+    if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+    const state = await this.getState();
+    const links = (state.navigationLinks ?? defaultNavigationLinks()).filter((item) => item.visible).sort((a,b) => a.position-b.position);
+    return new Response(JSON.stringify({ links }), { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' } });
+  }
+
+  private async handleAdminNavigation(request: Request): Promise<Response> {
+    const actor = await this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (actor.role === 'viewer' && request.method !== 'GET') return jsonResponse({ error: 'Forbidden' }, 403);
+    const state = await this.getState();
+    if (request.method === 'GET') return jsonResponse({ links: state.navigationLinks ?? defaultNavigationLinks() }, 200);
+    if (request.method !== 'PUT' || !isSameOrigin(request)) return jsonResponse({ error: 'Method not allowed' }, 405);
+    const body = (await readJsonBody<{ links?: unknown }>(request)) ?? {};
+    if (!Array.isArray(body.links) || body.links.length > 20) return jsonResponse({ error: 'Provide no more than 20 navigation links.' }, 400);
+    const links: ManagedNavigationLink[] = [];
+    for (const [index, raw] of body.links.entries()) {
+      if (!raw || typeof raw !== 'object') return jsonResponse({ error: 'Invalid navigation link.' }, 400);
+      const item = raw as Record<string, unknown>;
+      const label = typeof item.label === 'string' ? item.label.trim().slice(0,40) : '';
+      const url = typeof item.url === 'string' ? item.url.trim() : '';
+      if (!label || !url.startsWith('/') || url.startsWith('//') || url.length > 300 || /[\r\n]/.test(url)) {
+        return jsonResponse({ error: 'Each link needs a label and a same-site path beginning with one slash.' }, 400);
+      }
+      links.push({ id: typeof item.id === 'string' ? item.id.slice(0,80) : `nav_${index}`, label, url, visible: item.visible !== false, position: index });
+    }
+    state.navigationLinks = links;
+    await this.storage.put('admin-state', state);
+    await this.recordActivity(actor.username, 'update', 'navigation');
+    return jsonResponse({ links }, 200);
+  }
+
   private async handleHomepageSections(request: Request): Promise<Response> {
     const actor = await this.getSessionUser(request);
     if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
@@ -446,31 +575,77 @@ export class AdminData {
     if (actor.role !== 'admin') return jsonResponse({ error: 'Forbidden' }, 403);
     const state = await this.getState();
     const url = new URL(request.url);
-    if (request.method === 'GET') return jsonResponse({ backups: (state.backups ?? []).map(({id,label,createdAt}) => ({id,label,createdAt})) }, 200);
+    if (request.method === 'GET') return jsonResponse({ backups: (state.backups ?? []).map(({id,label,createdAt,mediaCopies}) => ({id,label,createdAt,mediaObjectCount:mediaCopies?.length ?? 0})) }, 200);
     if (request.method === 'POST' && url.pathname === '/api/admin/backups') {
       if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
-      const body = await readJsonBody<{ label?: unknown }>(request);
-      const { backups: previousBackups, ...snapshot } = state;
-      void previousBackups;
-      const backup = { id: `bkp_${Date.now().toString(36)}`, label: typeof body?.label === 'string' ? body.label.slice(0,100) : 'Manual backup', createdAt: Date.now(), snapshot };
-      state.backups = [backup, ...(state.backups ?? [])].slice(0, 20);
+      const body = (await readJsonBody<{ label?: unknown }>(request)) ?? {};
+      const media = state.media ?? [];
+      if (media.length && !this.mediaBucket) return jsonResponse({ error: 'R2 media storage is not configured; media-inclusive backups cannot be created.' }, 503);
+      const id = `bkp_${Date.now().toString(36)}`;
+      const mediaCopies: Array<{ sourceKey: string; backupKey: string }> = [];
+      try {
+        for (const asset of media) {
+          const object = await this.mediaBucket!.get(asset.key);
+          if (!object?.body) throw new Error(`Media object is missing: ${asset.name}`);
+          const backupKey = `backups/${id}/${asset.key}`;
+          await this.mediaBucket!.put(backupKey, object.body, { httpMetadata: { contentType: object.httpMetadata?.contentType ?? asset.type } });
+          mediaCopies.push({ sourceKey: asset.key, backupKey });
+        }
+      } catch (error) {
+        await Promise.all(mediaCopies.map((item) => this.mediaBucket!.delete(item.backupKey).catch(() => undefined)));
+        return jsonResponse({ error: error instanceof Error ? `Backup media copy failed: ${error.message}` : 'Backup media copy failed.' }, 500);
+      }
+      const { backups: previousBackups, users, revokedSessions, loginAttempts, ...snapshot } = state;
+      const backup = {
+        id,
+        label: typeof body.label === 'string' ? body.label.slice(0,100) : 'Manual backup',
+        createdAt: Date.now(),
+        snapshot,
+        mediaCopies,
+      };
+      const nextBackups = [backup, ...(previousBackups ?? [])].slice(0, 20);
+      const removedBackups = (previousBackups ?? []).slice(19);
+      state.backups = nextBackups;
       await this.storage.put('admin-state', state);
+      if (this.mediaBucket) {
+        await Promise.all(removedBackups.flatMap((old) => (old.mediaCopies ?? []).map((item) => this.mediaBucket!.delete(item.backupKey).catch(() => undefined))));
+      }
       await this.recordActivity(actor.username, 'create', 'backup', backup.id);
-      return jsonResponse({ backup: { id: backup.id, label: backup.label, createdAt: backup.createdAt } }, 201);
+      return jsonResponse({ backup: { id: backup.id, label: backup.label, createdAt: backup.createdAt, mediaObjectCount: mediaCopies.length } }, 201);
     }
     if (request.method === 'POST' && url.pathname.endsWith('/restore')) {
       if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
       const id = decodeURIComponent(url.pathname.split('/').slice(-2)[0]);
       const backup = (state.backups ?? []).find((item) => item.id === id);
       if (!backup) return jsonResponse({ error: 'Backup not found.' }, 404);
-      const restored = { ...backup.snapshot, backups: state.backups };
+      const mediaCopies = backup.mediaCopies ?? [];
+      if (mediaCopies.length && !this.mediaBucket) return jsonResponse({ error: 'R2 media storage is not configured; this backup cannot restore media.' }, 503);
+      try {
+        for (const copy of mediaCopies) {
+          const object = await this.mediaBucket!.get(copy.backupKey);
+          if (!object?.body) throw new Error(`Backup media object is missing: ${copy.backupKey}`);
+          await this.mediaBucket!.put(copy.sourceKey, object.body, { httpMetadata: { contentType: object.httpMetadata?.contentType ?? 'application/octet-stream' } });
+        }
+        const restoredMediaKeys = new Set((backup.snapshot.media ?? []).map((asset) => asset.key));
+        for (const asset of state.media ?? []) {
+          if (!restoredMediaKeys.has(asset.key)) await this.mediaBucket?.delete(asset.key);
+        }
+      } catch (error) {
+        return jsonResponse({ error: error instanceof Error ? `Backup restore failed: ${error.message}` : 'Backup restore failed.' }, 500);
+      }
+      const restored = {
+        ...backup.snapshot,
+        backups: state.backups,
+        users: state.users,
+        revokedSessions: state.revokedSessions,
+        loginAttempts: state.loginAttempts,
+      };
       await this.storage.put('admin-state', restored);
       await this.recordActivity(actor.username, 'restore', 'backup', id);
-      return jsonResponse({ restored: true }, 200);
+      return jsonResponse({ restored: true, mediaObjectCount: mediaCopies.length }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
   }
-
 
   private async handlePublicMedia(request: Request): Promise<Response> {
     if (request.method !== 'GET' && request.method !== 'HEAD') return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -490,6 +665,35 @@ export class AdminData {
         'Content-Disposition': 'inline',
       },
     });
+  }
+
+  private async handleScheduledPublishing(request: Request): Promise<Response> {
+    if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
+    const secret = this.secrets.SESSION_SECRET;
+    const authorization = request.headers.get('Authorization') ?? '';
+    if (!secret || !safeEqual(authorization, `Bearer ${secret}`)) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const state = await this.getState();
+    const now = Date.now();
+    const due = (state.content ?? []).filter((item) => item.status === 'scheduled' && typeof item.scheduledAt === 'number' && item.scheduledAt <= now);
+    if (!due.length) return jsonResponse({ published: 0 }, 200);
+    const dueIds = new Set(due.map((item) => item.id));
+    state.content = (state.content ?? []).map((item) => dueIds.has(item.id)
+      ? { ...item, status: 'published', publishedAt: now, scheduledAt: undefined, updatedAt: now, version: item.version + 1 }
+      : item);
+    state.activity = [...(state.activity ?? []), ...due.map((item) => ({
+      id: `act_${now.toString(36)}_${item.id}`, actor: 'system', action: 'publish_scheduled', resource: 'content', resourceId: item.id, createdAt: now,
+    }))].slice(-2000);
+    await this.storage.put('admin-state', state);
+    return jsonResponse({ published: due.length, ids: due.map((item) => item.id) }, 200);
+  }
+
+  private async handleSitemapContent(request: Request): Promise<Response> {
+    if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+    const state = await this.getState();
+    const content = (state.content ?? [])
+      .filter((item) => item.status === 'published' && item.includeInSitemap !== false)
+      .map((item) => ({ slug: item.slug, updatedAt: item.updatedAt }));
+    return jsonResponse({ content }, 200);
   }
 
   private async handlePublicContent(request: Request): Promise<Response> {
@@ -764,9 +968,11 @@ export class AdminData {
     if (state) {
       if (!Array.isArray(state.messages)) state.messages = [];
       if (!Array.isArray(state.content)) state.content = [];
+      if (!Array.isArray(state.contentRevisions)) state.contentRevisions = [];
       if (!Array.isArray(state.activity)) state.activity = [];
       if (!Array.isArray(state.redirects)) state.redirects = [];
-      if (!Array.isArray(state.homepageSections)) state.homepageSections = [];
+      if (!Array.isArray(state.homepageSections) || state.homepageSections.length === 0) state.homepageSections = defaultHomepageSections();
+      if (!Array.isArray(state.navigationLinks)) state.navigationLinks = defaultNavigationLinks();
       if (!Array.isArray(state.backups)) state.backups = [];
       if (!Array.isArray(state.media)) state.media = [];
       if (!Array.isArray(state.revokedSessions)) state.revokedSessions = [];
@@ -778,12 +984,8 @@ export class AdminData {
     const freshState: AdminState = {
       settings: { ...DEFAULT_SITE_SETTINGS },
       events: [],
-      messages: [], content: [], activity: [], redirects: [],
-      homepageSections: [
-        { id: 'home_hero', key: 'hero', title: 'Hero section', content: 'Homepage hero content configuration', visible: true, position: 0, updatedAt: Date.now() },
-        { id: 'home_tools', key: 'tools', title: 'Image tools', content: 'Homepage tools section configuration', visible: true, position: 1, updatedAt: Date.now() },
-        { id: 'home_features', key: 'features', title: 'Why PicShrinkPro', content: 'Homepage features section configuration', visible: true, position: 2, updatedAt: Date.now() },
-      ], backups: [], media: [], revokedSessions: [], users: [], loginAttempts: [],
+      messages: [], content: [], contentRevisions: [], activity: [], redirects: [],
+      homepageSections: defaultHomepageSections(), navigationLinks: defaultNavigationLinks(), backups: [], media: [], revokedSessions: [], users: [], loginAttempts: [],
     };
     await this.storage.put('admin-state', freshState);
     return freshState;
@@ -879,8 +1081,31 @@ async function verifyAdminPassword(password: string, saltValue: string, expected
   } catch { return false; }
 }
 
+function escapeXml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+function defaultNavigationLinks(): ManagedNavigationLink[] {
+  return [
+    { id: 'nav_compress', label: 'Compress', url: '/compressor', visible: true, position: 0 },
+    { id: 'nav_bg', label: 'Remove BG', url: '/bg-remover', visible: true, position: 1 },
+    { id: 'nav_resize', label: 'Resize', url: '/resizer', visible: true, position: 2 },
+    { id: 'nav_blog', label: 'Blog', url: '/blog', visible: true, position: 3 },
+    { id: 'nav_about', label: 'About', url: '/about', visible: true, position: 4 },
+  ];
+}
+
+function defaultHomepageSections(): HomepageSection[] {
+  const now = Date.now();
+  return [
+    { id: 'home_hero', key: 'hero', title: 'Free Online Image Tools That Respect Your Privacy', content: 'Compress, remove backgrounds, resize, crop, and convert JPG, PNG, WebP, and PDF instantly. Free browser-based tools with no watermark; image processing stays on your device.', visible: true, position: 0, updatedAt: now },
+    { id: 'home_tools', key: 'tools', title: 'All 9 Free Online Image Tools', content: 'Every tool you need to compress, remove background, filter, enhance, format, and package images—100% free and in-browser.', visible: true, position: 1, updatedAt: now },
+    { id: 'home_features', key: 'features', title: 'Engineered for Speed, Privacy & Simplicity', content: 'Why Choose PicShrinkPro', visible: true, position: 2, updatedAt: now },
+  ];
+}
+
 function slugify(value: string): string {
-  return value.toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 160);
+  return value.toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 160);
 }
 
 function clampString(value: unknown, fallback: string, maxLength = 300): string {
@@ -1004,12 +1229,98 @@ export function withSecurityHeaders(response: Response, pathname: string): Respo
   });
 }
 
+interface PublicManagedArticle {
+  title: string; slug: string; excerpt: string; body: string; seoTitle?: string;
+  metaDescription?: string; canonicalUrl?: string; ogImageUrl?: string;
+  publishedAt?: number; updatedAt: number;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderManagedArticleHtml(article: PublicManagedArticle, url: URL, stylesheetLinks: string): Response {
+  const title = article.seoTitle?.trim() || article.title;
+  const description = article.metaDescription?.trim() || article.excerpt;
+  const canonical = sanitizeCanonicalUrl(article.canonicalUrl) || `${url.origin}/blog/${encodeURIComponent(article.slug)}`;
+  const image = safePublicUrl(article.ogImageUrl) || 'https://picshrinkpro.com/og-image.png';
+  const paragraphs = article.body.split(/\r?\n\s*\r?\n/g).map((part) => part.trim()).filter(Boolean)
+    .map((part) => `<p class="mb-5 text-base leading-8 text-slate-700">${escapeHtml(part).replace(/\r?\n/g, '<br>')}</p>`).join('\n');
+  const published = article.publishedAt ? new Date(article.publishedAt).toISOString() : new Date(article.updatedAt).toISOString();
+  const schema = JSON.stringify({
+    '@context': 'https://schema.org', '@type': 'BlogPosting', headline: article.title,
+    description, datePublished: published, dateModified: new Date(article.updatedAt).toISOString(),
+    mainEntityOfPage: canonical, image, publisher: { '@type': 'Organization', name: 'PicShrinkPro', url: 'https://picshrinkpro.com/' },
+  }).replace(/</g, '\\u003c');
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)} | PicShrinkPro</title><meta name="description" content="${escapeHtml(description)}">
+<meta name="robots" content="index, follow, max-image-preview:large"><link rel="canonical" href="${escapeHtml(canonical)}">
+<meta property="og:type" content="article"><meta property="og:title" content="${escapeHtml(title)}"><meta property="og:description" content="${escapeHtml(description)}"><meta property="og:url" content="${escapeHtml(canonical)}"><meta property="og:image" content="${escapeHtml(image)}">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(title)}"><meta name="twitter:description" content="${escapeHtml(description)}"><meta name="twitter:image" content="${escapeHtml(image)}">
+${stylesheetLinks}<script type="application/ld+json">${schema}</script></head>
+<body class="min-h-screen bg-slate-50 text-slate-800"><header class="border-b border-slate-200 bg-white"><div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-4"><a class="text-xl font-black text-blue-700" href="/">PicShrinkPro</a><nav class="flex gap-5 text-sm font-semibold text-slate-600"><a href="/blog">Blog</a><a href="/compressor">Image compressor</a><a href="/contact">Contact</a></nav></div></header>
+<main class="mx-auto max-w-4xl px-4 py-12 sm:py-16"><nav class="mb-8 text-sm text-slate-500"><a href="/" class="hover:text-blue-600">Home</a> / <a href="/blog" class="hover:text-blue-600">Blog</a> / <span>${escapeHtml(article.title)}</span></nav>
+<article><header class="mb-10"><p class="mb-3 text-xs font-bold uppercase tracking-wider text-blue-600">PicShrinkPro Guides</p><h1 class="text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl">${escapeHtml(article.title)}</h1><p class="mt-5 text-lg leading-8 text-slate-600">${escapeHtml(article.excerpt)}</p><p class="mt-4 text-xs text-slate-400">Updated ${new Date(article.updatedAt).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'})}</p></header>
+<div class="prose prose-slate max-w-none">${paragraphs}</div></article><div class="mt-12 border-t border-slate-200 pt-6"><a href="/blog" class="font-semibold text-blue-700">← Back to all articles</a></div></main>
+<footer class="border-t border-slate-200 bg-white py-8 text-center text-sm text-slate-500">© ${new Date().getFullYear()} PicShrinkPro</footer></body></html>`;
+  return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' } });
+}
+
+function safePublicUrl(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  try { const url = new URL(value.trim()); return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : ''; }
+  catch { return ''; }
+}
+
 const worker = {
+  async scheduled(_controller: { scheduledTime: number; cron: string }, env: Env, ctx: { waitUntil(promise: Promise<unknown>): void }): Promise<void> {
+    if (!env.SESSION_SECRET) return;
+    const durableId = env.ADMIN_DATA.idFromName('global');
+    const stub = env.ADMIN_DATA.get(durableId);
+    ctx.waitUntil(stub.fetch(new Request('https://admin.internal/api/internal/publish-scheduled', {
+      method: 'POST', headers: { Authorization: `Bearer ${env.SESSION_SECRET}` },
+    })));
+  },
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     let response: Response;
 
-    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/')) {
+    if (url.pathname.startsWith('/blog/') && request.method === 'GET' && !url.pathname.endsWith('.md')) {
+      let slug = '';
+      try { slug = decodeURIComponent(url.pathname.slice('/blog/'.length)); } catch { slug = ''; }
+      const articleResponse = slug ? await adminApi(new Request(new URL('/api/content/' + encodeURIComponent(slug), url), { method: 'GET' }), env) : new Response(null, { status: 404 });
+      if (articleResponse.ok) {
+        const result = await articleResponse.json() as { content: PublicManagedArticle };
+        const shellResponse = await env.ASSETS.fetch(new Request(new URL('/', url)));
+        const shell = shellResponse.ok ? await shellResponse.text() : '';
+        const stylesheetLinks = [...shell.matchAll(/<link\b[^>]*rel=[\"']stylesheet[\"'][^>]*>/gi)].map((match) => match[0]).join('\n');
+        response = renderManagedArticleHtml(result.content, url, stylesheetLinks);
+      } else {
+        const redirectResponse = await adminApi(new Request(new URL(`/api/redirect/resolve?path=${encodeURIComponent(url.pathname)}`, url), { method: 'GET' }), env);
+        if (redirectResponse.ok) {
+          const redirect = await redirectResponse.json() as { destinationUrl: string; statusCode: number };
+          response = Response.redirect(new URL(redirect.destinationUrl, url).toString(), redirect.statusCode);
+        } else {
+          const markdownResponse = await markdownForRequest(request, env);
+          response = markdownResponse ?? await env.ASSETS.fetch(request);
+        }
+      }
+    } else if (url.pathname === '/sitemap.xml' && request.method === 'GET') {
+      const staticSitemap = await env.ASSETS.fetch(request);
+      const staticXml = staticSitemap.ok ? await staticSitemap.text() : '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>';
+      const contentResponse = await adminApi(new Request(new URL('/api/sitemap-content', url), { method: 'GET' }), env);
+      const payload = contentResponse.ok ? await contentResponse.json() as { content?: Array<{ slug: string; updatedAt: number }> } : { content: [] };
+      const entries = (payload.content ?? []).filter((item) => !staticXml.includes(`${url.origin}/blog/${encodeURIComponent(item.slug)}`)).map((item) => {
+        const loc = `${url.origin}/blog/${encodeURIComponent(item.slug)}`;
+        const lastmod = new Date(item.updatedAt).toISOString().slice(0, 10);
+        return `  <url><loc>${escapeXml(loc)}</loc><lastmod>${lastmod}</lastmod></url>`;
+      });
+      const xml = staticXml.includes('</urlset>')
+        ? staticXml.replace('</urlset>', `${entries.length ? `\n${entries.join('\n')}\n` : ''}</urlset>`)
+        : `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries.join('\n')}\n</urlset>`;
+      response = new Response(xml, { status: 200, headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=300, stale-while-revalidate=600' } });
+    } else if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/')) {
       response = await adminApi(request, env);
     } else {
       const redirectResponse = request.method === 'GET' ? await adminApi(new Request(new URL(`/api/redirect/resolve?path=${encodeURIComponent(url.pathname)}`, url), { method: 'GET' }), env) : undefined;
