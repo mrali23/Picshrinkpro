@@ -24,9 +24,25 @@ const TEST_SECRETS = {
   SESSION_SECRET: 'test-session-secret-with-more-than-thirty-two-characters',
 };
 
-function createTestApp(secrets: Record<string, string> = TEST_SECRETS, assets: Record<string, string> = {}) {
+
+class MemoryR2Bucket {
+  private readonly objects = new Map<string, { bytes: Uint8Array; contentType: string }>();
+  async put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView, options?: { httpMetadata?: { contentType?: string } }) {
+    const bytes = value instanceof ReadableStream
+      ? new Uint8Array(await new Response(value).arrayBuffer())
+      : value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    this.objects.set(key, { bytes, contentType: options?.httpMetadata?.contentType ?? 'application/octet-stream' });
+  }
+  async get(key: string) {
+    const object = this.objects.get(key);
+    return object ? { body: new Response(object.bytes).body, httpMetadata: { contentType: object.contentType }, size: object.bytes.byteLength } : null;
+  }
+  async delete(key: string) { this.objects.delete(key); }
+}
+
+function createTestApp(secrets: Record<string, string> = TEST_SECRETS, assets: Record<string, string> = {}, mediaBucket?: MemoryR2Bucket) {
   // Mirrors Cloudflare: Durable Objects are constructed as new AdminData(ctx, env)
-  const data = new AdminData({ storage: new MemoryStorage() }, secrets);
+  const data = new AdminData({ storage: new MemoryStorage() }, { ...secrets, MEDIA: mediaBucket });
   const stub = { fetch: (request: Request) => data.fetch(request) };
   const env = {
     ASSETS: {
@@ -36,6 +52,7 @@ function createTestApp(secrets: Record<string, string> = TEST_SECRETS, assets: R
       },
     },
     ADMIN_DATA: { idFromName: () => 'global', get: () => stub },
+    MEDIA: mediaBucket,
     ...secrets,
   };
   return {
@@ -123,6 +140,39 @@ test('analytics events update shared live dashboard metrics', async () => {
 
 
 
+
+
+test('R2 media uploads validate content and publish stable public image URLs', async () => {
+  const bucket = new MemoryR2Bucket();
+  const app = createTestApp(TEST_SECRETS, {}, bucket);
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const form = new FormData();
+  form.set('file', new File([new Uint8Array([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])], 'sample.png', { type: 'image/png' }));
+  const upload = await app.fetch('/api/admin/media', {
+    method: 'POST', headers: { Cookie: cookie, Origin: 'https://picshrink.test' }, body: form,
+  });
+  assert.equal(upload.status, 201);
+  const asset = (await upload.json() as { media: { id: string; size: number } }).media;
+  assert.equal(asset.size, 8);
+  const publicImage = await app.fetch('/media/' + asset.id);
+  assert.equal(publicImage.status, 200);
+  assert.equal(publicImage.headers.get('Content-Type'), 'image/png');
+  assert.equal((await publicImage.arrayBuffer()).byteLength, 8);
+
+  const invalidForm = new FormData();
+  invalidForm.set('file', new File(['not a png'], 'fake.png', { type: 'image/png' }));
+  const invalid = await app.fetch('/api/admin/media', {
+    method: 'POST', headers: { Cookie: cookie, Origin: 'https://picshrink.test' }, body: invalidForm,
+  });
+  assert.equal(invalid.status, 400);
+
+  const deleted = await app.fetch('/api/admin/media/' + asset.id, {
+    method: 'DELETE', headers: { Cookie: cookie, Origin: 'https://picshrink.test' },
+  });
+  assert.equal(deleted.status, 200);
+  assert.equal((await app.fetch('/media/' + asset.id)).status, 404);
+});
 
 test('admin user management hashes passwords and enforces editor/viewer roles', async () => {
   const app = createTestApp();
