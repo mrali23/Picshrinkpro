@@ -922,7 +922,7 @@ export class AdminData {
       if (!Array.isArray(state.activity)) state.activity = [];
       if (!Array.isArray(state.redirects)) state.redirects = [];
       if (!Array.isArray(state.homepageSections) || state.homepageSections.length === 0) state.homepageSections = defaultHomepageSections();
-      if (!Array.isArray(state.navigationLinks) || state.navigationLinks.length === 0) state.navigationLinks = defaultNavigationLinks();
+      if (!Array.isArray(state.navigationLinks)) state.navigationLinks = defaultNavigationLinks();
       if (!Array.isArray(state.backups)) state.backups = [];
       if (!Array.isArray(state.media)) state.media = [];
       if (!Array.isArray(state.revokedSessions)) state.revokedSessions = [];
