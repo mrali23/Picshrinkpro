@@ -110,7 +110,7 @@ The following code is now present in the feature branch:
 
 - The D1 migration exists but the application APIs currently use Durable Object storage for application records and user accounts. D1 provisioning, data migration and D1-backed transactional persistence remain outstanding.
 - The R2 bucket must be created in the target Cloudflare account before deployment. The repository cannot create that account resource by itself.
-- CMS article rendering is client-hydrated. Server-rendered/prerendered HTML and sitemap generation for managed articles still need implementation for reliable crawler discovery.
+- CMS article rendering is client-hydrated. Published CMS articles are now appended to the live XML sitemap, but server-rendered/prerendered article HTML is still outstanding for reliable crawler indexing.
 - Homepage section configuration is stored but does not yet alter the public homepage layout.
 - Per-user accounts and admin/editor/viewer RBAC are implemented in Durable Object state. The first account is bootstrapped from Worker secrets; subsequent accounts use PBKDF2-SHA-256 password hashes and server-enforced roles. Admins manage accounts from the Users & roles tab. A secure self-service password change/reset flow and TOTP are still outstanding.
 - Login throttling now persists hashed client keys and rolling attempt windows in Durable Object state. TOTP, session/device management UI, password reset and dedicated security-event reporting remain outstanding.
