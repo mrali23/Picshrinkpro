@@ -19,7 +19,7 @@ interface ManagedRedirect { id: string; sourcePath: string; destinationUrl: stri
 interface ManagedSection { id: string; key: string; title: string; content: string; visible: boolean; position: number; updatedAt: number; }
 interface ActivityEntry { id: string; actor: string; action: string; resource: string; resourceId?: string; createdAt: number; }
 interface BackupEntry { id: string; label: string; createdAt: number; }
-interface MediaAsset { id: string; key: string; name: string; type: string; size: number; createdAt: number; }
+interface MediaAsset { id: string; key: string; name: string; type: string; size: number; altText?: string; folder?: string; createdAt: number; }
 interface ManagedContent { id: string; title: string; slug: string; excerpt: string; body: string; status: 'draft' | 'published' | 'scheduled' | 'archived'; scheduledAt?: number; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; includeInSitemap: boolean; createdAt: number; updatedAt: number; publishedAt?: number; version: number; }
 interface ManagedRevision { id: string; contentId: string; version: number; title: string; slug: string; status: ManagedContent['status']; createdAt: number; actor: string; }
 
@@ -64,6 +64,7 @@ function AdminDashboardContent() {
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
   const [selectedMediaFile, setSelectedMediaFile] = useState<File | null>(null);
+  const [mediaUploadFolder, setMediaUploadFolder] = useState('general');
   const [mediaLoading, setMediaLoading] = useState(false);
   const [redirectDraft, setRedirectDraft] = useState({ sourcePath: '', destinationUrl: '', statusCode: '301' });
   const [editingContentId, setEditingContentId] = useState<string | null>(null);
@@ -241,7 +242,7 @@ function AdminDashboardContent() {
   const uploadMedia = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedMediaFile) { setError('Choose an image before uploading.'); return; }
-    const form = new FormData(); form.set('file', selectedMediaFile);
+    const form = new FormData(); form.set('file', selectedMediaFile); form.set('folder', mediaUploadFolder);
     try {
       const result = await requestJson<{ media: MediaAsset }>('/api/admin/media', { method: 'POST', body: form });
       setMediaAssets((items) => [result.media, ...items]); setSelectedMediaFile(null);
@@ -249,6 +250,19 @@ function AdminDashboardContent() {
       if (input) input.value = '';
       setNotice('Image uploaded to the configured R2 bucket.');
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Image upload failed.'); }
+  };
+
+  const saveMediaDetails = async (event: FormEvent<HTMLFormElement>, asset: MediaAsset) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      const result = await requestJson<{ media: MediaAsset }>('/api/admin/media/' + encodeURIComponent(asset.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: form.get('name'), altText: form.get('altText'), folder: form.get('folder') }),
+      });
+      setMediaAssets((items) => items.map((item) => item.id === asset.id ? result.media : item));
+      setNotice('Media details saved.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Media details could not be saved.'); }
   };
 
   const deleteMedia = async (asset: MediaAsset) => {
@@ -530,9 +544,9 @@ function AdminDashboardContent() {
             <div><h2 className="text-xl font-bold text-slate-900">Media library</h2><p className="mt-1 text-sm text-slate-500">Upload, preview, and remove image assets stored in your Cloudflare R2 bucket. Maximum file size: 10 MB.</p></div>
             <form onSubmit={uploadMedia} className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center">
               <input id="admin-media-file" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/gif" onChange={(e) => setSelectedMediaFile(e.target.files?.[0] ?? null)} className="min-w-0 flex-1 text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-blue-700"/>
-              <button disabled={!selectedMediaFile} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">Upload image</button>
+              <input value={mediaUploadFolder} onChange={(e) => setMediaUploadFolder(e.target.value)} placeholder="Folder (e.g. blog)" aria-label="Upload folder" className="rounded-xl border border-slate-300 px-3 py-2 text-sm sm:w-40"/><button disabled={!selectedMediaFile} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">Upload image</button>
             </form>
-            {mediaLoading ? <p className="py-10 text-center text-sm text-slate-500">Loading media library…</p> : mediaAssets.length ? <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">{mediaAssets.map((asset) => <article key={asset.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><img src={'/api/admin/media/' + encodeURIComponent(asset.id)} alt={asset.name} loading="lazy" className="aspect-square w-full bg-slate-100 object-contain"/><div className="space-y-2 p-3"><p className="truncate text-xs font-semibold text-slate-800" title={asset.name}>{asset.name}</p><p className="text-[11px] text-slate-500">{(asset.size / 1024).toFixed(1)} KB · {asset.type.replace('image/','').toUpperCase()}</p><button onClick={() => deleteMedia(asset)} className="text-xs font-semibold text-rose-600 hover:underline">Delete asset</button></div></article>)}</div> : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center"><Image className="mx-auto text-slate-400" size={30}/><h3 className="mt-3 font-semibold text-slate-800">No media uploaded</h3><p className="mt-1 text-sm text-slate-500">Choose an image above to populate the library.</p></div>}
+            {mediaLoading ? <p className="py-10 text-center text-sm text-slate-500">Loading media library…</p> : mediaAssets.length ? <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">{mediaAssets.map((asset) => <article key={asset.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><img src={'/api/admin/media/' + encodeURIComponent(asset.id)} alt={asset.name} loading="lazy" className="aspect-square w-full bg-slate-100 object-contain"/><div className="space-y-2 p-3"><p className="truncate text-xs font-semibold text-slate-800" title={asset.name}>{asset.name}</p><p className="text-[11px] text-slate-500">{(asset.size / 1024).toFixed(1)} KB · {asset.type.replace('image/','').toUpperCase()}</p><form onSubmit={(event) => saveMediaDetails(event,asset)} className="space-y-2"><input name="name" defaultValue={asset.name} aria-label="Media name" className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs"/><input name="altText" defaultValue={asset.altText || ''} placeholder="Accessible alt text" aria-label="Alt text" className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs"/><input name="folder" defaultValue={asset.folder || ''} placeholder="Folder" aria-label="Media folder" className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs"/><button className="rounded-lg border border-blue-200 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50">Save details</button></form><button onClick={() => deleteMedia(asset)} className="text-xs font-semibold text-rose-600 hover:underline">Delete asset</button></div></article>)}</div> : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center"><Image className="mx-auto text-slate-400" size={30}/><h3 className="mt-3 font-semibold text-slate-800">No media uploaded</h3><p className="mt-1 text-sm text-slate-500">Choose an image above to populate the library.</p></div>}
           </section>
         ) : tab === 'inbox' ? (
           <section className="space-y-4">
