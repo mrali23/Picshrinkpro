@@ -10,6 +10,8 @@ export function ContactPage() {
   const [subject, setSubject] = useState('Feedback');
   const [message, setMessage] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [errors, setErrors] = useState<{ name?: string; email?: string; message?: string }>({});
 
   const validate = () => {
@@ -23,13 +25,28 @@ export function ContactPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (validate()) {
+    setSubmitError('');
+    if (!validate()) return;
+    setIsSending(true);
+    try {
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ name, email, subject, message }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || 'Your message could not be sent. Please try again.');
       setIsSubmitted(true);
       setName('');
       setEmail('');
+      setSubject('Feedback');
       setMessage('');
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Your message could not be sent. Please try again.');
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -80,6 +97,7 @@ export function ContactPage() {
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-5">
+                {submitError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{submitError}</p>}
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     Your Name <span className="text-rose-500">*</span>
@@ -152,10 +170,11 @@ export function ContactPage() {
 
                 <button
                   type="submit"
+                  disabled={isSending}
                   className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Send className="w-4 h-4" />
-                  <span>Send Message</span>
+                  <span>{isSending ? 'Sending…' : 'Send Message'}</span>
                 </button>
               </form>
             )}

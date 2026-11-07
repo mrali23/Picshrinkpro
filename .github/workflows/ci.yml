@@ -15,6 +15,10 @@ jobs:
         uses: oven-sh/setup-bun@v2
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
+      - name: Type-check source
+        run: bun run lint
+      - name: Run automated tests
+        run: bun run test
       - name: Build production site
         run: bun run build
       - name: Validate Worker configuration and bundle

@@ -1,11 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, Calendar, Clock, ArrowRight, Search, Sparkles } from 'lucide-react';
 import { SEOHead } from '../../components/common/SEOHead';
 import { AdBanner } from '../../components/common/AdBanner';
 import { BLOG_POSTS } from '../../data/blogData';
 
+interface ManagedIndexPost { id: string; title: string; slug: string; excerpt: string; seoTitle: string; metaDescription: string; ogImageUrl: string; publishedAt?: number; updatedAt: number; }
+
 export function BlogIndexPage() {
+  const [managedPosts, setManagedPosts] = useState<ManagedIndexPost[]>([]);
+  useEffect(() => {
+    let active = true;
+    fetch('/api/content', { headers: { Accept: 'application/json' } })
+      .then(async (response) => response.ok ? response.json() as Promise<{ content: ManagedIndexPost[] }> : { content: [] })
+      .then((result) => { if (active) setManagedPosts(result.content); })
+      .catch(() => { if (active) setManagedPosts([]); });
+    return () => { active = false; };
+  }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
@@ -195,7 +206,26 @@ export function BlogIndexPage() {
           ))}
         </div>
 
-        {filteredPosts.length === 0 && (
+
+        {managedPosts.length > 0 && (
+          <section className="mt-12">
+            <div className="mb-5"><h2 className="text-2xl font-extrabold text-slate-900">Latest articles</h2><p className="mt-1 text-sm text-slate-500">Recently published guides from the PicShrink editorial team.</p></div>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {managedPosts.filter((item) => {
+                const query = searchQuery.toLowerCase();
+                return (!query || item.title.toLowerCase().includes(query) || item.excerpt.toLowerCase().includes(query)) &&
+                  (selectedCategory === 'All' || selectedCategory === 'Managed');
+              }).map((item) => (
+                <Link key={item.id} to={'/blog/' + item.slug} className="group flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xs transition-all hover:shadow-xl">
+                  {item.ogImageUrl && <img src={item.ogImageUrl} alt={item.title} loading="lazy" className="h-48 w-full object-cover"/>}
+                  <div className="flex-1 p-6"><span className="text-[11px] font-bold uppercase tracking-wider text-blue-600">Latest article</span><h3 className="mt-2 text-lg font-bold leading-snug text-slate-900 group-hover:text-blue-600">{item.title}</h3><p className="mt-2 line-clamp-3 text-sm leading-relaxed text-slate-500">{item.excerpt}</p><p className="mt-4 text-xs font-semibold text-blue-600">Read article <ArrowRight className="inline h-3.5 w-3.5"/></p></div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {filteredPosts.length === 0 && managedPosts.length === 0 && (
           <div className="py-16 text-center text-slate-500">
             <p className="text-lg font-semibold">No articles found matching "{searchQuery}"</p>
             <p className="text-sm mt-1">Try searching for compression, WebP, background, or PDF.</p>

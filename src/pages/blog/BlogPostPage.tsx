@@ -1,4 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { Calendar, Clock, User, ArrowLeft, ArrowRight, Share2, Sparkles, CheckCircle2 } from 'lucide-react';
 import { SEOHead } from '../../components/common/SEOHead';
 import { AdBanner } from '../../components/common/AdBanner';
@@ -6,13 +7,63 @@ import { BLOG_POSTS } from '../../data/blogData';
 import { NotFoundPage } from '../NotFoundPage';
 import { LOGO_URL, SITE_NAME, absoluteUrl } from '../../config/site';
 
+interface ManagedPublicPost {
+  title: string; slug: string; excerpt: string; body: string; status: 'published';
+  seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string;
+  publishedAt?: number; updatedAt: number;
+}
+
 export function BlogPostPage() {
   const { slug } = useParams<{ slug: string }>();
   const post = BLOG_POSTS.find((p) => p.slug === slug);
+  const [managedPost, setManagedPost] = useState<ManagedPublicPost | null>(null);
+  const [managedLoading, setManagedLoading] = useState(!post);
 
-  if (!post) {
-    return <NotFoundPage />;
+  useEffect(() => {
+    if (post || !slug) { setManagedLoading(false); return; }
+    let active = true;
+    setManagedLoading(true);
+    fetch('/api/content/' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Content not found');
+        return response.json() as Promise<{ content: ManagedPublicPost }>;
+      })
+      .then((result) => { if (active) setManagedPost(result.content); })
+      .catch(() => { if (active) setManagedPost(null); })
+      .finally(() => { if (active) setManagedLoading(false); });
+    return () => { active = false; };
+  }, [post, slug]);
+
+  if (!post && managedLoading) return <main className="mx-auto max-w-4xl px-4 py-20 text-center text-slate-500">Loading article…</main>;
+  if (!post && !managedPost) return <NotFoundPage />;
+
+  if (!post && managedPost) {
+    const paragraphs = managedPost.body.split(/\n\s*\n/).filter(Boolean);
+    const path = '/blog/' + managedPost.slug;
+    const articleDate = new Date(managedPost.publishedAt ?? managedPost.updatedAt).toISOString();
+    const managedSchema = {
+      '@context': 'https://schema.org', '@type': 'BlogPosting',
+      headline: managedPost.title, description: managedPost.metaDescription || managedPost.excerpt,
+      image: managedPost.ogImageUrl ? [managedPost.ogImageUrl] : undefined,
+      datePublished: articleDate, dateModified: new Date(managedPost.updatedAt).toISOString(),
+      author: { '@type': 'Organization', name: SITE_NAME, url: absoluteUrl('/about') },
+      publisher: { '@type': 'Organization', name: SITE_NAME, logo: { '@type': 'ImageObject', url: absoluteUrl(LOGO_URL) } },
+      mainEntityOfPage: { '@type': 'WebPage', '@id': absoluteUrl(path) },
+    };
+    return (
+      <article className="min-h-screen bg-slate-50 py-10">
+        <SEOHead title={managedPost.seoTitle || managedPost.title} description={managedPost.metaDescription || managedPost.excerpt} path={path} canonicalUrl={managedPost.canonicalUrl || undefined} ogType="article" ogImage={managedPost.ogImageUrl || undefined} schema={managedSchema} />
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+          <Link to="/blog" className="mb-6 inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600"><ArrowLeft className="h-4 w-4"/>Back to All Blog Posts</Link>
+          <header className="mb-8 mt-5 space-y-4"><p className="text-xs font-semibold uppercase tracking-wider text-blue-600">PicShrink Guide</p><h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">{managedPost.title}</h1><p className="text-lg leading-relaxed text-slate-600">{managedPost.excerpt}</p><time className="text-xs text-slate-400">{new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(new Date(managedPost.publishedAt ?? managedPost.updatedAt))}</time></header>
+          {managedPost.ogImageUrl && <img src={managedPost.ogImageUrl} alt={managedPost.title} className="mb-8 max-h-[460px] w-full rounded-3xl object-cover"/>}
+          <div className="space-y-6 rounded-3xl border border-slate-200 bg-white p-6 text-base leading-8 text-slate-700 shadow-sm sm:p-12">{paragraphs.map((paragraph, index) => <p key={index} className="whitespace-pre-wrap">{paragraph}</p>)}</div>
+        </div>
+      </article>
+    );
   }
+
+  if (!post) return <NotFoundPage />;
 
   // Schema.org BlogPosting
   const articleSchema = {
