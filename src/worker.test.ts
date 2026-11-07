@@ -211,8 +211,8 @@ test('admin user management hashes passwords and enforces editor/viewer roles', 
   assert.deepEqual(await revokedSession.json(), { authenticated: false });
 });
 
-test('CMS supports draft creation, versioned editing, publishing, and public reads', async () => {
-  const app = createTestApp();
+test('CMS supports draft creation, versioned editing, publishing, public reads and sitemap entries', async () => {
+  const app = createTestApp(TEST_SECRETS, { '/sitemap.xml': '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' });
   const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
   const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
   const create = await app.fetch('/api/admin/content', {
@@ -241,6 +241,9 @@ test('CMS supports draft creation, versioned editing, publishing, and public rea
   assert.equal((await publicArticle.json() as { content: { status: string } }).content.status, 'published');
   const publicIndex = await app.fetch('/api/content');
   assert.equal((await publicIndex.json() as { content: unknown[] }).content.length, 1);
+  const sitemap = await app.fetch('/sitemap.xml');
+  assert.equal(sitemap.status, 200);
+  assert.match(await sitemap.text(), /https:\/\/picshrinkpro\.com\/blog\/managed-article/);
 });
 
 test('SEO redirects are validated, listed, and applied by the Worker', async () => {
