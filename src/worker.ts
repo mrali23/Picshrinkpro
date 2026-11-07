@@ -432,7 +432,11 @@ export class AdminData {
       }
       target.role = role; target.active = active; target.sessionVersion = (target.sessionVersion ?? 1) + 1;
       if (typeof body.email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) target.email = body.email.trim().toLowerCase();
-      if (typeof body.password === 'string' && body.password.length >= 12) Object.assign(target, await hashAdminPassword(body.password));
+      if (typeof body.password === 'string' && body.password.length >= 12) {
+        Object.assign(target, await hashAdminPassword(body.password));
+        target.sessionVersion = (target.sessionVersion ?? 1) + 1;
+      }
+      if (body.revokeSessions === true) target.sessionVersion = (target.sessionVersion ?? 1) + 1;
       await this.storage.put('admin-state', state);
       await this.recordActivity(actor.username, 'update', 'admin_user', id);
       return jsonResponse({ updated: true }, 200);
