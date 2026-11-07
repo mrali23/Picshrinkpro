@@ -193,6 +193,31 @@ test('CMS supports draft creation, versioned editing, publishing, and public rea
   assert.equal((await publicIndex.json() as { content: unknown[] }).content.length, 1);
 });
 
+
+test('public homepage sections and sitemap expose only public configuration and published posts', async () => {
+  const staticSitemap = '<?xml version="1.0" encoding="UTF-8"?>\\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://picshrink.test/</loc></url></urlset>';
+  const app = createTestApp(TEST_SECRETS, { '/sitemap.xml': staticSitemap });
+  const homepage = await app.fetch('/api/homepage-sections');
+  assert.equal(homepage.status, 200);
+  assert.equal(homepage.headers.get('Cache-Control'), 'public, max-age=60, stale-while-revalidate=300');
+  const sections = (await homepage.json() as { sections: Array<{ key: string; visible: boolean }> }).sections;
+  assert.deepEqual(sections.map((item) => item.key), ['hero', 'tools', 'features']);
+
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const create = await app.fetch('/api/admin/content', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'Sitemap Managed Article', slug: 'sitemap-managed-article', excerpt: 'Published sitemap test', body: 'Content', status: 'published' }),
+  });
+  assert.equal(create.status, 201);
+  const sitemap = await app.fetch('/sitemap.xml');
+  assert.equal(sitemap.status, 200);
+  assert.match(sitemap.headers.get('Content-Type') ?? '', /application\\/xml/);
+  const xml = await sitemap.text();
+  assert.match(xml, /https:\\/\\/picshrink.test\\/blog\\/sitemap-managed-article/);
+  assert.match(xml, /https:\\/\\/picshrink.test\\//);
+});
+
 test('SEO redirects are validated, listed, and applied by the Worker', async () => {
   const app = createTestApp();
   const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
