@@ -7,7 +7,7 @@ export function AboutPage() {
     <div className="min-h-screen bg-slate-50 py-12">
       <SEOHead
         title="About PicShrink - Our Mission for Free Private Image Tools"
-        description="Learn about PicShrink's mission: delivering free, browser-based image tools. Selected images are processed locally by the tools and are not uploaded by those tools; supporting site services may still make network requests."
+        description="Free browser-based image tools. Selected images are processed locally and not uploaded by the tools; supporting services may still make requests."
         path="/about"
       />
 
