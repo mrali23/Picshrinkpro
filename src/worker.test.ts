@@ -237,9 +237,9 @@ test('public homepage sections and sitemap expose only public configuration and 
   assert.equal(create.status, 201);
   const sitemap = await app.fetch('/sitemap.xml');
   assert.equal(sitemap.status, 200);
-  assert.match(sitemap.headers.get('Content-Type') ?? '', /application\\/xml/);
+  assert.match(sitemap.headers.get('Content-Type') ?? '', /application\/xml/);
   const xml = await sitemap.text();
-  assert.match(xml, /https:\\/\\/picshrink.test\\/blog\\/sitemap-managed-article/);
+  assert.match(xml, /https:\/\/picshrink.test\/blog\/sitemap-managed-article/);
   assert.match(xml, /https:\\/\\/picshrink.test\\//);
 });
 
