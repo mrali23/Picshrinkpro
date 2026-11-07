@@ -32,7 +32,7 @@ interface ContactMessage {
 
 interface ManagedContent {
   id: string; title: string; slug: string; excerpt: string; body: string;
-  status: 'draft' | 'published' | 'archived'; seoTitle: string;
+  status: 'draft' | 'published' | 'scheduled' | 'archived'; scheduledAt?: number; seoTitle: string;
   metaDescription: string; canonicalUrl: string; ogImageUrl: string;
   createdAt: number; updatedAt: number; publishedAt?: number; version: number;
 }
@@ -113,6 +113,7 @@ export class AdminData {
 
     if (path === '/api/content' || path.startsWith('/api/content/')) return this.handlePublicContent(request);
     if (path === '/api/sitemap-content') return this.handleSitemapContent(request);
+    if (path === '/api/internal/publish-scheduled') return this.handleScheduledPublishing(request);
     if (path === '/api/homepage-sections') return this.handlePublicHomepageSections(request);
     if (path.startsWith('/media/')) return this.handlePublicMedia(request);
     if (path === '/api/settings') {
@@ -203,10 +204,12 @@ export class AdminData {
       const items = state.content ?? [];
       if (items.some((item) => item.slug === slug)) return jsonResponse({ error: 'That URL slug is already in use.' }, 409);
       const now = Date.now();
-      const status = body.status === 'published' ? 'published' : 'draft';
+      const status = body.status === 'published' ? 'published' : body.status === 'scheduled' ? 'scheduled' : 'draft';
+      const scheduledAt = typeof body.scheduledAt === 'number' ? body.scheduledAt : undefined;
+      if (status === 'scheduled' && (!scheduledAt || scheduledAt <= now)) return jsonResponse({ error: 'Choose a future publication date and time.' }, 400);
       const item: ManagedContent = {
         id: `cnt_${now.toString(36)}_${Math.random().toString(36).slice(2,8)}`, title, slug, excerpt, body: contentBody,
-        status, seoTitle: typeof body.seoTitle === 'string' ? body.seoTitle.slice(0, 180) : title,
+        status, scheduledAt: status === 'scheduled' ? scheduledAt : undefined, seoTitle: typeof body.seoTitle === 'string' ? body.seoTitle.slice(0, 180) : title,
         metaDescription: typeof body.metaDescription === 'string' ? body.metaDescription.slice(0, 300) : excerpt,
         canonicalUrl: typeof body.canonicalUrl === 'string' ? body.canonicalUrl.slice(0, 500) : '',
         ogImageUrl: typeof body.ogImageUrl === 'string' ? body.ogImageUrl.slice(0, 1000) : '',
@@ -227,7 +230,9 @@ export class AdminData {
       }
       const nextSlug = typeof body.slug === 'string' ? slugify(body.slug) : current.slug;
       if (items.some((item) => item.id !== id && item.slug === nextSlug)) return jsonResponse({ error: 'That URL slug is already in use.' }, 409);
-      const status = body.status === 'published' || body.status === 'archived' || body.status === 'draft' ? body.status : current.status;
+      const status = body.status === 'published' || body.status === 'scheduled' || body.status === 'archived' || body.status === 'draft' ? body.status : current.status;
+      const scheduledAt = typeof body.scheduledAt === 'number' ? body.scheduledAt : current.scheduledAt;
+      if (status === 'scheduled' && (!scheduledAt || scheduledAt <= Date.now())) return jsonResponse({ error: 'Choose a future publication date and time.' }, 400);
       const updated: ManagedContent = {
         ...current,
         title: typeof body.title === 'string' ? body.title.trim().slice(0,180) : current.title,
@@ -235,6 +240,7 @@ export class AdminData {
         excerpt: typeof body.excerpt === 'string' ? body.excerpt.trim().slice(0,500) : current.excerpt,
         body: typeof body.body === 'string' ? body.body.slice(0,100000) : current.body,
         status,
+        scheduledAt: status === 'scheduled' ? scheduledAt : undefined,
         seoTitle: typeof body.seoTitle === 'string' ? body.seoTitle.slice(0,180) : current.seoTitle,
         metaDescription: typeof body.metaDescription === 'string' ? body.metaDescription.slice(0,300) : current.metaDescription,
         canonicalUrl: body.canonicalUrl === undefined ? current.canonicalUrl : sanitizeCanonicalUrl(body.canonicalUrl),
@@ -505,6 +511,26 @@ export class AdminData {
         'Content-Disposition': 'inline',
       },
     });
+  }
+
+  private async handleScheduledPublishing(request: Request): Promise<Response> {
+    if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
+    const secret = this.secrets.SESSION_SECRET;
+    const authorization = request.headers.get('Authorization') ?? '';
+    if (!secret || !safeEqual(authorization, `Bearer ${secret}`)) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const state = await this.getState();
+    const now = Date.now();
+    const due = (state.content ?? []).filter((item) => item.status === 'scheduled' && typeof item.scheduledAt === 'number' && item.scheduledAt <= now);
+    if (!due.length) return jsonResponse({ published: 0 }, 200);
+    const dueIds = new Set(due.map((item) => item.id));
+    state.content = (state.content ?? []).map((item) => dueIds.has(item.id)
+      ? { ...item, status: 'published', publishedAt: now, scheduledAt: undefined, updatedAt: now, version: item.version + 1 }
+      : item);
+    state.activity = [...(state.activity ?? []), ...due.map((item) => ({
+      id: `act_${now.toString(36)}_${item.id}`, actor: 'system', action: 'publish_scheduled', resource: 'content', resourceId: item.id, createdAt: now,
+    }))].slice(-2000);
+    await this.storage.put('admin-state', state);
+    return jsonResponse({ published: due.length, ids: due.map((item) => item.id) }, 200);
   }
 
   private async handleSitemapContent(request: Request): Promise<Response> {
@@ -1038,6 +1064,14 @@ export function withSecurityHeaders(response: Response, pathname: string): Respo
 }
 
 const worker = {
+  async scheduled(_controller: { scheduledTime: number; cron: string }, env: Env, ctx: { waitUntil(promise: Promise<unknown>): void }): Promise<void> {
+    if (!env.SESSION_SECRET) return;
+    const durableId = env.ADMIN_DATA.idFromName('global');
+    const stub = env.ADMIN_DATA.get(durableId);
+    ctx.waitUntil(stub.fetch(new Request('https://admin.internal/api/internal/publish-scheduled', {
+      method: 'POST', headers: { Authorization: `Bearer ${env.SESSION_SECRET}` },
+    })));
+  },
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     let response: Response;
