@@ -20,7 +20,7 @@ interface ManagedSection { id: string; key: string; title: string; content: stri
 interface ActivityEntry { id: string; actor: string; action: string; resource: string; resourceId?: string; createdAt: number; }
 interface BackupEntry { id: string; label: string; createdAt: number; }
 interface MediaAsset { id: string; key: string; name: string; type: string; size: number; createdAt: number; }
-interface ManagedContent { id: string; title: string; slug: string; excerpt: string; body: string; status: 'draft' | 'published' | 'archived'; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; createdAt: number; updatedAt: number; publishedAt?: number; version: number; }
+interface ManagedContent { id: string; title: string; slug: string; excerpt: string; body: string; status: 'draft' | 'published' | 'scheduled' | 'archived'; scheduledAt?: number; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; createdAt: number; updatedAt: number; publishedAt?: number; version: number; }
 
 interface ContactMessage {
   id: string; name: string; email: string; subject: string; message: string;
