@@ -9,6 +9,7 @@ interface SEOHeadProps {
   path: string;
   ogType?: 'website' | 'article';
   ogImage?: string;
+  canonicalUrl?: string;
   schema?: Record<string, any> | Record<string, any>[];
   /** Keeps the page out of search results (404, admin). Also drops the canonical. */
   noindex?: boolean;
@@ -31,13 +32,14 @@ export function SEOHead({
   path,
   ogType = 'website',
   ogImage = DEFAULT_OG_IMAGE,
+  canonicalUrl: canonicalUrlOverride,
   schema,
   noindex = false,
   articleData,
 }: SEOHeadProps) {
   const { siteName, siteDescription } = usePublicSiteSettings();
   const cleanPath = path === '/' ? '/' : path.startsWith('/') ? path : `/${path}`;
-  const canonicalUrl = `${SITE_URL}${cleanPath}`;
+  const canonicalUrl = canonicalUrlOverride || `${SITE_URL}${cleanPath}`;
   const resolvedOgImage = absoluteUrl(ogImage);
   const pageTitle = title.replace(/PicShrink/gi, siteName);
   // The home page uses the admin-configured description only when it was customised;
