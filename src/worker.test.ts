@@ -216,7 +216,9 @@ test('CMS scheduled articles stay private until the authenticated publisher runs
   });
   assert.equal(publish.status, 200);
   assert.equal((await publish.json() as { published: number }).published, 1);
-  assert.equal((await app.fetch('/api/content/scheduled-release')).status, 200);
+  const publicIndex = await app.fetch('/api/content');
+  const publishedItems = (await publicIndex.json() as { content: Array<{ slug: string }> }).content;
+  assert.ok(publishedItems.some((item) => item.slug === 'scheduled-release'));
 });
 
 test('public homepage sections and sitemap expose only public configuration and published posts', async () => {
