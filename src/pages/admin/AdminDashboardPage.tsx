@@ -20,7 +20,7 @@ interface ManagedSection { id: string; key: string; title: string; content: stri
 interface ActivityEntry { id: string; actor: string; action: string; resource: string; resourceId?: string; createdAt: number; }
 interface BackupEntry { id: string; label: string; createdAt: number; }
 interface MediaAsset { id: string; key: string; name: string; type: string; size: number; createdAt: number; }
-interface ManagedContent { id: string; title: string; slug: string; excerpt: string; body: string; status: 'draft' | 'published' | 'scheduled' | 'archived'; scheduledAt?: number; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; createdAt: number; updatedAt: number; publishedAt?: number; version: number; }
+interface ManagedContent { id: string; title: string; slug: string; excerpt: string; body: string; status: 'draft' | 'published' | 'scheduled' | 'archived'; scheduledAt?: number; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; includeInSitemap: boolean; createdAt: number; updatedAt: number; publishedAt?: number; version: number; }
 interface ManagedRevision { id: string; contentId: string; version: number; title: string; slug: string; status: ManagedContent['status']; createdAt: number; actor: string; }
 
 interface ContactMessage {
@@ -67,7 +67,7 @@ function AdminDashboardContent() {
   const [mediaLoading, setMediaLoading] = useState(false);
   const [redirectDraft, setRedirectDraft] = useState({ sourcePath: '', destinationUrl: '', statusCode: '301' });
   const [editingContentId, setEditingContentId] = useState<string | null>(null);
-  const [contentDraft, setContentDraft] = useState({ title: '', slug: '', excerpt: '', body: '', status: 'draft' as 'draft' | 'published' | 'scheduled', scheduledAt: '', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '' });
+  const [contentDraft, setContentDraft] = useState({ title: '', slug: '', excerpt: '', body: '', status: 'draft' as 'draft' | 'published' | 'scheduled', scheduledAt: '', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '', includeInSitemap: true });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -289,7 +289,7 @@ function AdminDashboardContent() {
     requestJson<{ revisions: ManagedRevision[] }>('/api/admin/content/' + encodeURIComponent(item.id) + '/revisions')
       .then((result) => setContentRevisions(result.revisions))
       .catch((reason) => setError(reason instanceof Error ? reason.message : 'Revision history could not be loaded.'));
-    setContentDraft({ title: item.title, slug: item.slug, excerpt: item.excerpt, body: item.body, status: item.status === 'published' || item.status === 'scheduled' ? item.status : 'draft', scheduledAt: item.scheduledAt ? new Date(item.scheduledAt - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0,16) : '', seoTitle: item.seoTitle, metaDescription: item.metaDescription, canonicalUrl: item.canonicalUrl, ogImageUrl: item.ogImageUrl });
+    setContentDraft({ title: item.title, slug: item.slug, excerpt: item.excerpt, body: item.body, status: item.status === 'published' || item.status === 'scheduled' ? item.status : 'draft', scheduledAt: item.scheduledAt ? new Date(item.scheduledAt - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0,16) : '', seoTitle: item.seoTitle, metaDescription: item.metaDescription, canonicalUrl: item.canonicalUrl, ogImageUrl: item.ogImageUrl, includeInSitemap: item.includeInSitemap !== false });
     setError(''); setNotice('');
   };
 
@@ -302,7 +302,7 @@ function AdminDashboardContent() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: current.version }),
       });
       setContentItems((items) => items.map((item) => item.id === current.id ? result.content : item));
-      setContentDraft({ title: result.content.title, slug: result.content.slug, excerpt: result.content.excerpt, body: result.content.body, status: 'draft', scheduledAt: '', seoTitle: result.content.seoTitle, metaDescription: result.content.metaDescription, canonicalUrl: result.content.canonicalUrl, ogImageUrl: result.content.ogImageUrl });
+      setContentDraft({ title: result.content.title, slug: result.content.slug, excerpt: result.content.excerpt, body: result.content.body, status: 'draft', scheduledAt: '', seoTitle: result.content.seoTitle, metaDescription: result.content.metaDescription, canonicalUrl: result.content.canonicalUrl, ogImageUrl: result.content.ogImageUrl, includeInSitemap: result.content.includeInSitemap !== false });
       const history = await requestJson<{ revisions: ManagedRevision[] }>('/api/admin/content/' + encodeURIComponent(current.id) + '/revisions');
       setContentRevisions(history.revisions);
       setNotice('Revision restored as a draft. Review it before publishing.');
@@ -515,6 +515,7 @@ function AdminDashboardContent() {
               <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-semibold text-slate-700">SEO title<input maxLength={180} value={contentDraft.seoTitle} onChange={(e) => setContentDraft((v) => ({...v,seoTitle:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label><label className="block text-sm font-semibold text-slate-700">Meta description<input maxLength={300} value={contentDraft.metaDescription} onChange={(e) => setContentDraft((v) => ({...v,metaDescription:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label></div>
               <label className="block text-sm font-semibold text-slate-700">Canonical URL<input value={contentDraft.canonicalUrl} onChange={(e) => setContentDraft((v) => ({...v,canonicalUrl:e.target.value}))} placeholder="Optional absolute URL" className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label>
               <label className="block text-sm font-semibold text-slate-700">Open Graph image URL<input value={contentDraft.ogImageUrl} onChange={(e) => setContentDraft((v) => ({...v,ogImageUrl:e.target.value}))} placeholder="Optional image URL" className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label>
+              <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700"><input type="checkbox" checked={contentDraft.includeInSitemap} onChange={(e) => setContentDraft((v) => ({...v,includeInSitemap:e.target.checked}))}/> Include this article in the XML sitemap</label>
               <label className="block text-sm font-semibold text-slate-700">Publication status<select value={contentDraft.status} onChange={(e) => setContentDraft((v) => ({...v,status:e.target.value as 'draft'|'published'|'scheduled'}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"><option value="draft">Draft</option><option value="published">Publish now</option><option value="scheduled">Schedule</option></select></label>
               {contentDraft.status === 'scheduled' && <label className="block text-sm font-semibold text-slate-700">Publish date and time<input required type="datetime-local" min={new Date(Date.now() + 60_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0,16)} value={contentDraft.scheduledAt} onChange={(e) => setContentDraft((v) => ({...v,scheduledAt:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/><span className="mt-1 block text-xs font-normal text-slate-500">The Worker publishes scheduled articles every minute. Keep the site Worker cron trigger enabled.</span></label>}
               {editingContentId && <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
