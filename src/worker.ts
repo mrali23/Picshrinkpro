@@ -30,10 +30,33 @@ interface ContactMessage {
   createdAt: number;
 }
 
+interface ManagedContent {
+  id: string; title: string; slug: string; excerpt: string; body: string;
+  status: 'draft' | 'published' | 'archived'; seoTitle: string;
+  metaDescription: string; canonicalUrl: string; ogImageUrl: string;
+  createdAt: number; updatedAt: number; publishedAt?: number; version: number;
+}
+interface AdminActivity {
+  id: string; actor: string; action: string; resource: string;
+  resourceId?: string; createdAt: number;
+}
+interface ManagedRedirect {
+  id: string; sourcePath: string; destinationUrl: string;
+  statusCode: 301 | 302 | 307 | 308; active: boolean; createdAt: number;
+}
+interface HomepageSection {
+  id: string; key: string; title: string; content: string;
+  visible: boolean; position: number; updatedAt: number;
+}
 interface AdminState {
   settings: SiteSettings;
   events: AnalyticsEvent[];
   messages?: ContactMessage[];
+  content?: ManagedContent[];
+  activity?: AdminActivity[];
+  redirects?: ManagedRedirect[];
+  homepageSections?: HomepageSection[];
+  backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups'> }>;
 }
 
 interface StorageLike {
@@ -110,7 +133,201 @@ export class AdminData {
       return this.handleAnalytics(request);
     }
 
+    if (path === '/api/admin/content' || path.startsWith('/api/admin/content/')) {
+      return this.handleContent(request);
+    }
+    if (path === '/api/admin/activity') return this.handleActivity(request);
+    if (path === '/api/admin/redirects' || path.startsWith('/api/admin/redirects/')) {
+      return this.handleRedirects(request);
+    }
+    if (path === '/api/admin/homepage-sections') return this.handleHomepageSections(request);
+    if (path === '/api/admin/backups' || path.startsWith('/api/admin/backups/')) {
+      return this.handleBackups(request);
+    }
+
     return jsonResponse({ error: 'Not found' }, 404);
+  }
+
+
+  private async recordActivity(actor: string, action: string, resource: string, resourceId?: string): Promise<void> {
+    const state = await this.getState();
+    const activity = state.activity ?? [];
+    activity.unshift({ id: `act_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, actor, action, resource, resourceId, createdAt: Date.now() });
+    state.activity = activity.slice(0, 2000);
+    await this.storage.put('admin-state', state);
+  }
+
+  private async handleContent(request: Request): Promise<Response> {
+    const actor = this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const state = await this.getState();
+    const url = new URL(request.url);
+    const id = url.pathname.startsWith('/api/admin/content/') ? decodeURIComponent(url.pathname.slice('/api/admin/content/'.length)) : '';
+    if (request.method === 'GET') {
+      const status = url.searchParams.get('status');
+      const items = (state.content ?? []).filter((item) => !status || item.status === status).sort((a,b) => b.updatedAt-a.updatedAt);
+      return jsonResponse({ content: items }, 200);
+    }
+    if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+    const body = await readJsonBody<Record<string, unknown>>(request);
+    if (request.method === 'POST') {
+      const title = typeof body?.title === 'string' ? body.title.trim() : '';
+      const slug = slugify(typeof body?.slug === 'string' && body.slug.trim() ? body.slug : title);
+      const excerpt = typeof body?.excerpt === 'string' ? body.excerpt.trim() : '';
+      const contentBody = typeof body?.body === 'string' ? body.body : '';
+      if (title.length < 3 || title.length > 180 || !slug || slug.length > 160 || excerpt.length > 500 || contentBody.length > 100000) {
+        return jsonResponse({ error: 'Title, slug, excerpt, or article body is invalid.' }, 400);
+      }
+      const items = state.content ?? [];
+      if (items.some((item) => item.slug === slug)) return jsonResponse({ error: 'That URL slug is already in use.' }, 409);
+      const now = Date.now();
+      const status = body.status === 'published' ? 'published' : 'draft';
+      const item: ManagedContent = {
+        id: `cnt_${now.toString(36)}_${Math.random().toString(36).slice(2,8)}`, title, slug, excerpt, body: contentBody,
+        status, seoTitle: typeof body.seoTitle === 'string' ? body.seoTitle.slice(0, 180) : title,
+        metaDescription: typeof body.metaDescription === 'string' ? body.metaDescription.slice(0, 300) : excerpt,
+        canonicalUrl: typeof body.canonicalUrl === 'string' ? body.canonicalUrl.slice(0, 500) : '',
+        ogImageUrl: typeof body.ogImageUrl === 'string' ? body.ogImageUrl.slice(0, 1000) : '',
+        createdAt: now, updatedAt: now, publishedAt: status === 'published' ? now : undefined, version: 1,
+      };
+      state.content = [item, ...items];
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor, 'create', 'content', item.id);
+      return jsonResponse({ content: item }, 201);
+    }
+    const items = state.content ?? [];
+    const index = items.findIndex((item) => item.id === id);
+    if (index < 0) return jsonResponse({ error: 'Content not found.' }, 404);
+    if (request.method === 'PATCH') {
+      const current = items[index];
+      if (typeof body.version === 'number' && body.version !== current.version) {
+        return jsonResponse({ error: 'This content changed in another session. Reload before saving.', current }, 409);
+      }
+      const nextSlug = typeof body.slug === 'string' ? slugify(body.slug) : current.slug;
+      if (items.some((item) => item.id !== id && item.slug === nextSlug)) return jsonResponse({ error: 'That URL slug is already in use.' }, 409);
+      const status = body.status === 'published' || body.status === 'archived' || body.status === 'draft' ? body.status : current.status;
+      const updated: ManagedContent = {
+        ...current,
+        title: typeof body.title === 'string' ? body.title.trim().slice(0,180) : current.title,
+        slug: nextSlug,
+        excerpt: typeof body.excerpt === 'string' ? body.excerpt.trim().slice(0,500) : current.excerpt,
+        body: typeof body.body === 'string' ? body.body.slice(0,100000) : current.body,
+        status,
+        seoTitle: typeof body.seoTitle === 'string' ? body.seoTitle.slice(0,180) : current.seoTitle,
+        metaDescription: typeof body.metaDescription === 'string' ? body.metaDescription.slice(0,300) : current.metaDescription,
+        canonicalUrl: typeof body.canonicalUrl === 'string' ? body.canonicalUrl.slice(0,500) : current.canonicalUrl,
+        ogImageUrl: typeof body.ogImageUrl === 'string' ? body.ogImageUrl.slice(0,1000) : current.ogImageUrl,
+        updatedAt: Date.now(), publishedAt: status === 'published' ? (current.publishedAt ?? Date.now()) : undefined,
+        version: current.version + 1,
+      };
+      items[index] = updated;
+      state.content = items;
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor, 'update', 'content', id);
+      return jsonResponse({ content: updated }, 200);
+    }
+    if (request.method === 'DELETE') {
+      state.content = items.filter((item) => item.id !== id);
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor, 'delete', 'content', id);
+      return jsonResponse({ deleted: true }, 200);
+    }
+    return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+
+  private async handleActivity(request: Request): Promise<Response> {
+    if (!this.getSessionUser(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+    const state = await this.getState();
+    return jsonResponse({ activity: (state.activity ?? []).slice(0, 200) }, 200);
+  }
+
+  private async handleRedirects(request: Request): Promise<Response> {
+    const actor = this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const state = await this.getState();
+    const url = new URL(request.url);
+    const id = url.pathname.startsWith('/api/admin/redirects/') ? decodeURIComponent(url.pathname.slice('/api/admin/redirects/'.length)) : '';
+    if (request.method === 'GET') return jsonResponse({ redirects: state.redirects ?? [] }, 200);
+    if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+    const body = await readJsonBody<Record<string, unknown>>(request);
+    if (request.method === 'POST') {
+      const sourcePath = typeof body.sourcePath === 'string' ? body.sourcePath.trim() : '';
+      const destinationUrl = typeof body.destinationUrl === 'string' ? body.destinationUrl.trim() : '';
+      const statusCode = [301,302,307,308].includes(Number(body.statusCode)) ? Number(body.statusCode) as ManagedRedirect['statusCode'] : 301;
+      if (!sourcePath.startsWith('/') || sourcePath.startsWith('//') || sourcePath.length > 500 ||
+          !destinationUrl || destinationUrl.length > 1000 || destinationUrl.startsWith('//') ||
+          (destinationUrl.startsWith('http') && new URL(destinationUrl).origin !== new URL(request.url).origin)) {
+        return jsonResponse({ error: 'Use a local source path and a valid same-site destination.' }, 400);
+      }
+      const redirects = state.redirects ?? [];
+      if (redirects.some((item) => item.sourcePath === sourcePath)) return jsonResponse({ error: 'A redirect already exists for this path.' }, 409);
+      const item: ManagedRedirect = { id: `rdr_${Date.now().toString(36)}`, sourcePath, destinationUrl, statusCode, active: true, createdAt: Date.now() };
+      state.redirects = [item, ...redirects];
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor, 'create', 'redirect', item.id);
+      return jsonResponse({ redirect: item }, 201);
+    }
+    if (request.method === 'DELETE') {
+      state.redirects = (state.redirects ?? []).filter((item) => item.id !== id);
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor, 'delete', 'redirect', id);
+      return jsonResponse({ deleted: true }, 200);
+    }
+    return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+
+  private async handleHomepageSections(request: Request): Promise<Response> {
+    const actor = this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const state = await this.getState();
+    if (request.method === 'GET') return jsonResponse({ sections: state.homepageSections ?? [] }, 200);
+    if (request.method !== 'PUT' || !isSameOrigin(request)) return jsonResponse({ error: 'Method not allowed' }, 405);
+    const body = await readJsonBody<{ sections?: unknown }>(request);
+    if (!Array.isArray(body?.sections) || body.sections.length > 40) return jsonResponse({ error: 'Invalid homepage sections.' }, 400);
+    const sections: HomepageSection[] = body.sections.map((value, index) => {
+      const item = value as Record<string, unknown>;
+      return {
+        id: typeof item.id === 'string' ? item.id.slice(0,80) : `section_${index}`,
+        key: typeof item.key === 'string' ? item.key.slice(0,80) : `section_${index}`,
+        title: typeof item.title === 'string' ? item.title.slice(0,180) : '',
+        content: typeof item.content === 'string' ? item.content.slice(0,5000) : '',
+        visible: item.visible !== false, position: index, updatedAt: Date.now(),
+      };
+    });
+    state.homepageSections = sections;
+    await this.storage.put('admin-state', state);
+    await this.recordActivity(actor, 'update', 'homepage_sections');
+    return jsonResponse({ sections }, 200);
+  }
+
+  private async handleBackups(request: Request): Promise<Response> {
+    const actor = this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const state = await this.getState();
+    const url = new URL(request.url);
+    if (request.method === 'GET') return jsonResponse({ backups: (state.backups ?? []).map(({id,label,createdAt}) => ({id,label,createdAt})) }, 200);
+    if (request.method === 'POST' && url.pathname === '/api/admin/backups') {
+      if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+      const body = await readJsonBody<{ label?: unknown }>(request);
+      const snapshot = { ...state } as Omit<AdminState, 'backups'>;
+      const backup = { id: `bkp_${Date.now().toString(36)}`, label: typeof body?.label === 'string' ? body.label.slice(0,100) : 'Manual backup', createdAt: Date.now(), snapshot };
+      state.backups = [backup, ...(state.backups ?? [])].slice(0, 20);
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor, 'create', 'backup', backup.id);
+      return jsonResponse({ backup: { id: backup.id, label: backup.label, createdAt: backup.createdAt } }, 201);
+    }
+    if (request.method === 'POST' && url.pathname.endsWith('/restore')) {
+      if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+      const id = decodeURIComponent(url.pathname.split('/').slice(-2)[0]);
+      const backup = (state.backups ?? []).find((item) => item.id === id);
+      if (!backup) return jsonResponse({ error: 'Backup not found.' }, 404);
+      const restored = { ...backup.snapshot, backups: state.backups };
+      await this.storage.put('admin-state', restored);
+      await this.recordActivity(actor, 'restore', 'backup', id);
+      return jsonResponse({ restored: true }, 200);
+    }
+    return jsonResponse({ error: 'Method not allowed' }, 405);
   }
 
   private async handleGetPublicSettings(): Promise<Response> {
@@ -348,13 +565,18 @@ export class AdminData {
     const state = await this.storage.get<AdminState>('admin-state');
     if (state) {
       if (!Array.isArray(state.messages)) state.messages = [];
+      if (!Array.isArray(state.content)) state.content = [];
+      if (!Array.isArray(state.activity)) state.activity = [];
+      if (!Array.isArray(state.redirects)) state.redirects = [];
+      if (!Array.isArray(state.homepageSections)) state.homepageSections = [];
+      if (!Array.isArray(state.backups)) state.backups = [];
       return state;
     }
 
     const freshState: AdminState = {
       settings: { ...DEFAULT_SITE_SETTINGS },
       events: [],
-      messages: [],
+      messages: [], content: [], activity: [], redirects: [], homepageSections: [], backups: [],
     };
     await this.storage.put('admin-state', freshState);
     return freshState;
@@ -420,6 +642,10 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   adsensePublisherId: '',
   adSlots: { top: '', sidebar: '', bottom: '' },
 };
+
+function slugify(value: string): string {
+  return value.toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 160);
+}
 
 function clampString(value: unknown, fallback: string, maxLength = 300): string {
   return typeof value === 'string' ? value.slice(0, maxLength) : fallback;
