@@ -263,7 +263,7 @@ function AdminDashboardContent() {
   const resetContentDraft = () => {
     setEditingContentId(null);
     setContentRevisions([]);
-    setContentDraft({ title: '', slug: '', excerpt: '', body: '', status: 'draft', scheduledAt: '', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '' });
+    setContentDraft({ title: '', slug: '', excerpt: '', body: '', status: 'draft', scheduledAt: '', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '', includeInSitemap: true });
   };
 
   const saveContent = async (event: FormEvent<HTMLFormElement>) => {
