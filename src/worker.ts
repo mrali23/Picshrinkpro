@@ -97,6 +97,7 @@ export class AdminData {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    if (path.startsWith('/api/content/')) return this.handlePublicContent(request);
     if (path === '/api/settings') {
       return this.handleGetPublicSettings();
     }
@@ -329,6 +330,15 @@ export class AdminData {
       return jsonResponse({ restored: true }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+
+  private async handlePublicContent(request: Request): Promise<Response> {
+    if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+    const slug = decodeURIComponent(new URL(request.url).pathname.slice('/api/content/'.length));
+    const state = await this.getState();
+    const content = (state.content ?? []).find((item) => item.slug === slug && item.status === 'published');
+    if (!content) return jsonResponse({ error: 'Content not found.' }, 404);
+    return jsonResponse({ content }, 200);
   }
 
   private async handleResolveRedirect(request: Request): Promise<Response> {
