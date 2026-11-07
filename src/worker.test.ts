@@ -35,7 +35,7 @@ class MemoryR2Bucket {
   }
   async get(key: string) {
     const object = this.objects.get(key);
-    return object ? { body: new Response(object.bytes).body, httpMetadata: { contentType: object.contentType }, size: object.bytes.byteLength } : null;
+    return object ? { body: new Response(Buffer.from(object.bytes)).body, httpMetadata: { contentType: object.contentType }, size: object.bytes.byteLength } : null;
   }
   async delete(key: string) { this.objects.delete(key); }
 }
