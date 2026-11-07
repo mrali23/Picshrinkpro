@@ -65,7 +65,7 @@ function AdminDashboardContent() {
   const [mediaLoading, setMediaLoading] = useState(false);
   const [redirectDraft, setRedirectDraft] = useState({ sourcePath: '', destinationUrl: '', statusCode: '301' });
   const [editingContentId, setEditingContentId] = useState<string | null>(null);
-  const [contentDraft, setContentDraft] = useState({ title: '', slug: '', excerpt: '', body: '', status: 'draft' as 'draft' | 'published', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '' });
+  const [contentDraft, setContentDraft] = useState({ title: '', slug: '', excerpt: '', body: '', status: 'draft' as 'draft' | 'published' | 'scheduled', scheduledAt: '', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '' });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -260,7 +260,7 @@ function AdminDashboardContent() {
 
   const resetContentDraft = () => {
     setEditingContentId(null);
-    setContentDraft({ title: '', slug: '', excerpt: '', body: '', status: 'draft', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '' });
+    setContentDraft({ title: '', slug: '', excerpt: '', body: '', status: 'draft', scheduledAt: '', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '' });
   };
 
   const saveContent = async (event: FormEvent<HTMLFormElement>) => {
@@ -271,7 +271,7 @@ function AdminDashboardContent() {
       const result = await requestJson<{ content: ManagedContent }>(editingContentId ? '/api/admin/content/' + encodeURIComponent(editingContentId) : '/api/admin/content', {
         method: editingContentId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...contentDraft, version: existing?.version }),
+        body: JSON.stringify({ ...contentDraft, scheduledAt: contentDraft.status === 'scheduled' && contentDraft.scheduledAt ? new Date(contentDraft.scheduledAt).getTime() : undefined, version: existing?.version }),
       });
       setContentItems((items) => editingContentId ? items.map((item) => item.id === result.content.id ? result.content : item) : [result.content, ...items]);
       resetContentDraft();
@@ -283,7 +283,7 @@ function AdminDashboardContent() {
 
   const editContent = (item: ManagedContent) => {
     setEditingContentId(item.id);
-    setContentDraft({ title: item.title, slug: item.slug, excerpt: item.excerpt, body: item.body, status: item.status === 'published' ? 'published' : 'draft', seoTitle: item.seoTitle, metaDescription: item.metaDescription, canonicalUrl: item.canonicalUrl, ogImageUrl: item.ogImageUrl });
+    setContentDraft({ title: item.title, slug: item.slug, excerpt: item.excerpt, body: item.body, status: item.status === 'published' || item.status === 'scheduled' ? item.status : 'draft', scheduledAt: item.scheduledAt ? new Date(item.scheduledAt - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0,16) : '', seoTitle: item.seoTitle, metaDescription: item.metaDescription, canonicalUrl: item.canonicalUrl, ogImageUrl: item.ogImageUrl });
     setError(''); setNotice('');
   };
 
@@ -493,7 +493,8 @@ function AdminDashboardContent() {
               <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-semibold text-slate-700">SEO title<input maxLength={180} value={contentDraft.seoTitle} onChange={(e) => setContentDraft((v) => ({...v,seoTitle:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label><label className="block text-sm font-semibold text-slate-700">Meta description<input maxLength={300} value={contentDraft.metaDescription} onChange={(e) => setContentDraft((v) => ({...v,metaDescription:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label></div>
               <label className="block text-sm font-semibold text-slate-700">Canonical URL<input value={contentDraft.canonicalUrl} onChange={(e) => setContentDraft((v) => ({...v,canonicalUrl:e.target.value}))} placeholder="Optional absolute URL" className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label>
               <label className="block text-sm font-semibold text-slate-700">Open Graph image URL<input value={contentDraft.ogImageUrl} onChange={(e) => setContentDraft((v) => ({...v,ogImageUrl:e.target.value}))} placeholder="Optional image URL" className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label>
-              <label className="block text-sm font-semibold text-slate-700">Publication status<select value={contentDraft.status} onChange={(e) => setContentDraft((v) => ({...v,status:e.target.value as 'draft'|'published'}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"><option value="draft">Draft</option><option value="published">Published</option></select></label>
+              <label className="block text-sm font-semibold text-slate-700">Publication status<select value={contentDraft.status} onChange={(e) => setContentDraft((v) => ({...v,status:e.target.value as 'draft'|'published'|'scheduled'}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"><option value="draft">Draft</option><option value="published">Publish now</option><option value="scheduled">Schedule</option></select></label>
+              {contentDraft.status === 'scheduled' && <label className="block text-sm font-semibold text-slate-700">Publish date and time<input required type="datetime-local" min={new Date(Date.now() + 60_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0,16)} value={contentDraft.scheduledAt} onChange={(e) => setContentDraft((v) => ({...v,scheduledAt:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/><span className="mt-1 block text-xs font-normal text-slate-500">The Worker publishes scheduled articles every minute. Keep the site Worker cron trigger enabled.</span></label>}
               <div className="flex flex-wrap gap-2"><button disabled={busy} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save article'}</button><button type="button" onClick={resetContentDraft} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600">Clear</button></div>
             </form>
           </section>
