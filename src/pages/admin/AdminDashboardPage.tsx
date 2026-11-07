@@ -12,7 +12,11 @@ interface AnalyticsSummary {
   recentEvents: AnalyticsEvent[];
 }
 
-type AdminTab = 'overview' | 'content' | 'inbox' | 'settings';
+type AdminTab = 'overview' | 'content' | 'inbox' | 'site' | 'settings';
+interface ManagedRedirect { id: string; sourcePath: string; destinationUrl: string; statusCode: 301 | 302 | 307 | 308; active: boolean; createdAt: number; }
+interface ManagedSection { id: string; key: string; title: string; content: string; visible: boolean; position: number; updatedAt: number; }
+interface ActivityEntry { id: string; actor: string; action: string; resource: string; resourceId?: string; createdAt: number; }
+interface BackupEntry { id: string; label: string; createdAt: number; }
 interface ManagedContent { id: string; title: string; slug: string; excerpt: string; body: string; status: 'draft' | 'published' | 'archived'; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; createdAt: number; updatedAt: number; publishedAt?: number; version: number; }
 
 interface ContactMessage {
@@ -46,6 +50,11 @@ function AdminDashboardContent() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [contentItems, setContentItems] = useState<ManagedContent[]>([]);
+  const [redirects, setRedirects] = useState<ManagedRedirect[]>([]);
+  const [sections, setSections] = useState<ManagedSection[]>([]);
+  const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
+  const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [redirectDraft, setRedirectDraft] = useState({ sourcePath: '', destinationUrl: '', statusCode: '301' });
   const [editingContentId, setEditingContentId] = useState<string | null>(null);
   const [contentDraft, setContentDraft] = useState({ title: '', slug: '', excerpt: '', body: '', status: 'draft' as 'draft' | 'published', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '' });
   const [error, setError] = useState('');
@@ -53,16 +62,24 @@ function AdminDashboardContent() {
   const [busy, setBusy] = useState(false);
 
   const loadAdminData = useCallback(async () => {
-    const [nextSettings, nextSummary, inbox, contentResult] = await Promise.all([
+    const [nextSettings, nextSummary, inbox, contentResult, redirectResult, sectionResult, activityResult, backupResult] = await Promise.all([
       requestJson<SiteSettings>('/api/admin/settings'),
       requestJson<AnalyticsSummary>('/api/admin/analytics'),
       requestJson<{ messages: ContactMessage[] }>('/api/admin/messages'),
       requestJson<{ content: ManagedContent[] }>('/api/admin/content'),
+      requestJson<{ redirects: ManagedRedirect[] }>('/api/admin/redirects'),
+      requestJson<{ sections: ManagedSection[] }>('/api/admin/homepage-sections'),
+      requestJson<{ activity: ActivityEntry[] }>('/api/admin/activity'),
+      requestJson<{ backups: BackupEntry[] }>('/api/admin/backups'),
     ]);
     setSettings(nextSettings);
     setSummary(nextSummary);
     setMessages(inbox.messages);
     setContentItems(contentResult.content);
+    setRedirects(redirectResult.redirects);
+    setSections(sectionResult.sections);
+    setActivityEntries(activityResult.activity);
+    setBackups(backupResult.backups);
   }, []);
 
   useEffect(() => {
@@ -202,6 +219,58 @@ function AdminDashboardContent() {
       if (editingContentId === item.id) resetContentDraft();
       setNotice('Content deleted.');
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Content could not be deleted.'); }
+  };
+
+
+  const createRedirect = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setError('');
+    try {
+      const result = await requestJson<{ redirect: ManagedRedirect }>('/api/admin/redirects', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...redirectDraft, statusCode: Number(redirectDraft.statusCode) }),
+      });
+      setRedirects((items) => [result.redirect, ...items]);
+      setRedirectDraft({ sourcePath: '', destinationUrl: '', statusCode: '301' });
+      setNotice('Redirect created and now active.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Redirect could not be created.'); }
+  };
+
+  const deleteRedirect = async (id: string) => {
+    try {
+      await requestJson('/api/admin/redirects/' + encodeURIComponent(id), { method: 'DELETE' });
+      setRedirects((items) => items.filter((item) => item.id !== id));
+      setNotice('Redirect deleted.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Redirect could not be deleted.'); }
+  };
+
+  const saveSections = async () => {
+    setBusy(true); setError('');
+    try {
+      const result = await requestJson<{ sections: ManagedSection[] }>('/api/admin/homepage-sections', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sections }),
+      });
+      setSections(result.sections); setNotice('Homepage section settings saved.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Sections could not be saved.'); }
+    finally { setBusy(false); }
+  };
+
+  const createBackup = async () => {
+    try {
+      const result = await requestJson<{ backup: BackupEntry }>('/api/admin/backups', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Manual backup' }),
+      });
+      setBackups((items) => [result.backup, ...items]); setNotice('Backup snapshot created.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Backup could not be created.'); }
+  };
+
+  const restoreBackup = async (id: string) => {
+    if (!window.confirm('Restore this snapshot? Current settings, content, inbox and site controls will be replaced.')) return;
+    try {
+      await requestJson('/api/admin/backups/' + encodeURIComponent(id) + '/restore', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      await loadAdminData(); setNotice('Backup snapshot restored.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Backup could not be restored.'); }
   };
 
   const updateSettings = (patch: Partial<SiteSettings>) => {
@@ -366,6 +435,34 @@ function AdminDashboardContent() {
                 </div>
               </article>
             )) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center"><Mail className="mx-auto text-slate-400" size={28} /><h3 className="mt-3 font-semibold text-slate-800">Your inbox is empty</h3><p className="mt-1 text-sm text-slate-500">New contact form submissions will appear here.</p></div>}
+          </section>
+        ) : tab === 'site' ? (
+          <section className="space-y-6">
+            <div><h2 className="text-xl font-bold text-slate-900">Website, SEO and operations</h2><p className="mt-1 text-sm text-slate-500">Manage redirects, homepage section configuration, audit activity, and recoverable application snapshots.</p></div>
+            <div className="grid gap-6 xl:grid-cols-2">
+              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div><h3 className="font-bold text-slate-900">SEO redirects</h3><p className="mt-1 text-xs text-slate-500">Redirect old local paths to new local paths. External destinations are blocked.</p></div>
+                <form onSubmit={createRedirect} className="grid gap-3 sm:grid-cols-3">
+                  <input required value={redirectDraft.sourcePath} onChange={(e) => setRedirectDraft((v) => ({...v,sourcePath:e.target.value}))} placeholder="/old-path" className="rounded-xl border border-slate-300 px-3 py-2 text-sm"/>
+                  <input required value={redirectDraft.destinationUrl} onChange={(e) => setRedirectDraft((v) => ({...v,destinationUrl:e.target.value}))} placeholder="/new-path" className="rounded-xl border border-slate-300 px-3 py-2 text-sm"/>
+                  <div className="flex gap-2"><select value={redirectDraft.statusCode} onChange={(e) => setRedirectDraft((v) => ({...v,statusCode:e.target.value}))} className="min-w-0 flex-1 rounded-xl border border-slate-300 px-2 py-2 text-sm"><option>301</option><option>302</option><option>307</option><option>308</option></select><button className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Add</button></div>
+                </form>
+                <div className="space-y-2">{redirects.length ? redirects.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 text-xs"><span className="min-w-0 break-all text-slate-700">{item.sourcePath} <span className="text-slate-400">→</span> {item.destinationUrl} <b className="ml-1">{item.statusCode}</b></span><button onClick={() => deleteRedirect(item.id)} className="shrink-0 text-rose-600">Delete</button></div>) : <p className="text-sm text-slate-400">No redirects configured.</p>}</div>
+              </div>
+              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div><h3 className="font-bold text-slate-900">Homepage sections</h3><p className="mt-1 text-xs text-slate-500">Configure section labels and content records. Public homepage components must be wired to these records before these settings change their visible layout.</p></div>
+                {sections.map((section,index) => <div key={section.id} className="space-y-2 rounded-xl border border-slate-100 p-3"><div className="flex items-center justify-between"><span className="text-xs font-semibold text-slate-500">{section.key}</span><label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={section.visible} onChange={(e) => setSections((items) => items.map((v,i) => i===index ? {...v,visible:e.target.checked} : v))}/>Visible</label></div><input value={section.title} onChange={(e) => setSections((items) => items.map((v,i) => i===index ? {...v,title:e.target.value} : v))} placeholder="Section title" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"/><textarea rows={2} value={section.content} onChange={(e) => setSections((items) => items.map((v,i) => i===index ? {...v,content:e.target.value} : v))} placeholder="Section content/configuration" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"/></div>)}
+                <button onClick={saveSections} disabled={busy} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save section settings'}</button>
+              </div>
+              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between"><div><h3 className="font-bold text-slate-900">Activity log</h3><p className="mt-1 text-xs text-slate-500">Recent admin changes recorded by the Worker.</p></div><Activity className="text-blue-600"/></div>
+                <div className="max-h-72 space-y-2 overflow-auto">{activityEntries.length ? activityEntries.slice(0,50).map((entry) => <div key={entry.id} className="flex justify-between gap-3 rounded-lg bg-slate-50 p-3 text-xs"><span className="text-slate-700"><b>{entry.actor}</b> {entry.action} {entry.resource} {entry.resourceId || ''}</span><time className="shrink-0 text-slate-400">{new Intl.DateTimeFormat(undefined,{dateStyle:'short',timeStyle:'short'}).format(entry.createdAt)}</time></div>) : <p className="text-sm text-slate-400">No administrative activity recorded yet.</p>}</div>
+              </div>
+              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between"><div><h3 className="font-bold text-slate-900">Backup snapshots</h3><p className="mt-1 text-xs text-slate-500">Snapshots cover Durable Object application state, not R2 media objects.</p></div><button onClick={createBackup} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Create backup</button></div>
+                <div className="space-y-2">{backups.length ? backups.map((backup) => <div key={backup.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="text-sm font-semibold text-slate-800">{backup.label}</p><time className="text-xs text-slate-400">{new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(backup.createdAt)}</time></div><button onClick={() => restoreBackup(backup.id)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">Restore</button></div>) : <p className="text-sm text-slate-400">No backups created.</p>}</div>
+              </div>
+            </div>
           </section>
         ) : (
           <form onSubmit={handleSave} className="space-y-6">
