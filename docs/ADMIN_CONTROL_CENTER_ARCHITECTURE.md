@@ -113,7 +113,7 @@ The following code is now present in the feature branch:
 - CMS article rendering is client-hydrated. Server-rendered/prerendered HTML and sitemap generation for managed articles still need implementation for reliable crawler discovery.
 - Homepage section configuration is stored but does not yet alter the public homepage layout.
 - Per-user accounts and admin/editor/viewer RBAC are implemented in Durable Object state. The first account is bootstrapped from Worker secrets; subsequent accounts use PBKDF2-SHA-256 password hashes and server-enforced roles. Admins manage accounts from the Users & roles tab. A secure self-service password change/reset flow and TOTP are still outstanding.
-- Login throttling still uses in-memory Worker state rather than a persistent shared rate limiter. TOTP, session/device management UI, password reset and dedicated security-event reporting remain outstanding.
+- Login throttling now persists hashed client keys and rolling attempt windows in Durable Object state. TOTP, session/device management UI, password reset and dedicated security-event reporting remain outstanding.
 - Backup/restore currently covers Durable Object application state only. It does not back up or restore R2 media objects, D1 data, or off-account disaster recovery.
 - Full content revisions, categories/tags, scheduled publishing, rich-text editing, media transformations, CSV exports, and realtime WebSocket updates remain outstanding.
 - Automated tests have been added for CMS, redirect, backup, contact and session workflows, but have not yet been executed in a local/CI environment.
