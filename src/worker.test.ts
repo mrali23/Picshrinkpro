@@ -215,7 +215,10 @@ test('CMS scheduled articles stay private until the authenticated publisher runs
     method: 'POST', headers: { Authorization: `Bearer ${TEST_SECRETS.SESSION_SECRET}` },
   });
   assert.equal(publish.status, 200);
-  assert.equal((await publish.json() as { published: number }).published, 1);
+  const publishResult = await publish.json() as { published: number; publishedSlugs: string[]; scheduledSlugs: string[] };
+  assert.equal(publishResult.published, 1);
+  assert.deepEqual(publishResult.publishedSlugs, ['scheduled-release']);
+  assert.deepEqual(publishResult.scheduledSlugs, []);
   const adminIndex = await app.fetch('/api/admin/content', { headers: { Cookie: cookie } });
   const adminItems = (await adminIndex.json() as { content: Array<{ slug: string; status: string }> }).content;
   assert.ok(adminItems.some((item) => item.slug === 'scheduled-release' && item.status === 'published'));
