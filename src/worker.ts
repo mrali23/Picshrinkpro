@@ -54,6 +54,9 @@ interface R2BucketLike {
   get(key: string): Promise<{ body: ReadableStream | null; httpMetadata?: { contentType?: string }; size?: number } | null>;
   delete(key: string): Promise<void>;
 }
+type AdminRole = 'admin' | 'editor' | 'viewer';
+interface AdminPrincipal { username: string; role: AdminRole; }
+interface AdminUserRecord { id: string; username: string; email: string; passwordSalt: string; passwordHash: string; role: AdminRole; active: boolean; createdAt: number; lastLoginAt?: number; }
 interface AdminState {
   settings: SiteSettings;
   events: AnalyticsEvent[];
@@ -65,6 +68,7 @@ interface AdminState {
   backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups'> }>;
   media?: MediaAsset[];
   revokedSessions?: string[];
+  users?: AdminUserRecord[];
 }
 
 interface StorageLike {
@@ -121,6 +125,7 @@ export class AdminData {
       return this.handleContactSubmission(request);
     }
 
+    if (path === '/api/admin/users' || path.startsWith('/api/admin/users/')) return this.handleUsers(request);
     if (path === '/api/admin/messages') {
       return this.handleAdminMessages(request);
     }
@@ -181,6 +186,7 @@ export class AdminData {
       const items = (state.content ?? []).filter((item) => !status || item.status === status).sort((a,b) => b.updatedAt-a.updatedAt);
       return jsonResponse({ content: items }, 200);
     }
+    if (request.method !== 'GET' && actor.role === 'viewer') return jsonResponse({ error: 'Forbidden' }, 403);
     if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
     const body = (await readJsonBody<Record<string, unknown>>(request)) ?? {};
     if (request.method === 'POST') {
@@ -205,7 +211,7 @@ export class AdminData {
       };
       state.content = [item, ...items];
       await this.storage.put('admin-state', state);
-      await this.recordActivity(actor, 'create', 'content', item.id);
+      await this.recordActivity(actor.username, 'create', 'content', item.id);
       return jsonResponse({ content: item }, 201);
     }
     const items = state.content ?? [];
@@ -257,6 +263,7 @@ export class AdminData {
     const url = new URL(request.url);
     const id = url.pathname.startsWith('/api/admin/media/') ? decodeURIComponent(url.pathname.slice('/api/admin/media/'.length)) : '';
     if (request.method === 'GET' && !id) return jsonResponse({ media: state.media ?? [] }, 200);
+    if (request.method !== 'GET' && actor.role === 'viewer') return jsonResponse({ error: 'Forbidden' }, 403);
     if (!isSameOrigin(request) && request.method !== 'GET') return jsonResponse({ error: 'Forbidden' }, 403);
     if (request.method === 'POST') {
       const form = await request.formData().catch(() => null);
@@ -302,8 +309,71 @@ export class AdminData {
     return jsonResponse({ error: 'Method not allowed' }, 405);
   }
 
+
+  private async handleUsers(request: Request): Promise<Response> {
+    const actor = await this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (actor.role !== 'admin') return jsonResponse({ error: 'Forbidden' }, 403);
+    const state = await this.getState();
+    const url = new URL(request.url);
+    const id = url.pathname.startsWith('/api/admin/users/') ? decodeURIComponent(url.pathname.slice('/api/admin/users/'.length)) : '';
+    if (request.method === 'GET') {
+      return jsonResponse({ users: (state.users ?? []).map(({id,username,email,role,active,createdAt,lastLoginAt}) => ({id,username,email,role,active,createdAt,lastLoginAt})) }, 200);
+    }
+    if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+    const body = (await readJsonBody<Record<string, unknown>>(request)) ?? {};
+    if (request.method === 'POST') {
+      const username = typeof body.username === 'string' ? body.username.trim() : '';
+      const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+      const password = typeof body.password === 'string' ? body.password : '';
+      const role = body.role === 'editor' || body.role === 'viewer' ? body.role : body.role === 'admin' ? 'admin' : null;
+      if (!/^[a-zA-Z0-9._-]{3,32}$/.test(username) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || password.length < 12 || !role) {
+        return jsonResponse({ error: 'Provide a valid username, email, role and password of at least 12 characters.' }, 400);
+      }
+      if ((state.users ?? []).some((user) => user.username.toLowerCase() === username.toLowerCase() || user.email.toLowerCase() === email)) {
+        return jsonResponse({ error: 'Username or email is already registered.' }, 409);
+      }
+      const credentials = await hashAdminPassword(password);
+      const user: AdminUserRecord = { id: `usr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`, username, email, ...credentials, role, active: true, createdAt: Date.now() };
+      state.users = [...(state.users ?? []), user];
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor.username, 'create', 'admin_user', user.id);
+      return jsonResponse({ user: { id: user.id, username, email, role, active: true, createdAt: user.createdAt } }, 201);
+    }
+    const users = state.users ?? [];
+    const target = users.find((user) => user.id === id);
+    if (!target) return jsonResponse({ error: 'User not found.' }, 404);
+    if (request.method === 'PATCH') {
+      const role = body.role === 'admin' || body.role === 'editor' || body.role === 'viewer' ? body.role : target.role;
+      const active = typeof body.active === 'boolean' ? body.active : target.active;
+      if (target.id === actor.username && (!active || role !== 'admin')) return jsonResponse({ error: 'You cannot deactivate or demote your own account.' }, 400);
+      if (target.role === 'admin' && (role !== 'admin' || !active) && users.filter((user) => user.role === 'admin' && user.active).length <= 1) {
+        return jsonResponse({ error: 'At least one active administrator must remain.' }, 400);
+      }
+      target.role = role; target.active = active;
+      if (typeof body.email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) target.email = body.email.trim().toLowerCase();
+      if (typeof body.password === 'string' && body.password.length >= 12) Object.assign(target, await hashAdminPassword(body.password));
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor.username, 'update', 'admin_user', id);
+      return jsonResponse({ updated: true }, 200);
+    }
+    if (request.method === 'DELETE') {
+      if (target.username === actor.username) return jsonResponse({ error: 'You cannot delete your own account.' }, 400);
+      if (target.role === 'admin' && target.active && users.filter((user) => user.role === 'admin' && user.active).length <= 1) {
+        return jsonResponse({ error: 'At least one active administrator must remain.' }, 400);
+      }
+      state.users = users.filter((user) => user.id !== id);
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor.username, 'delete', 'admin_user', id);
+      return jsonResponse({ deleted: true }, 200);
+    }
+    return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+
   private async handleActivity(request: Request): Promise<Response> {
-    if (!await this.getSessionUser(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const actor = await this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (actor.role !== 'admin') return jsonResponse({ error: 'Forbidden' }, 403);
     if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
     const state = await this.getState();
     return jsonResponse({ activity: (state.activity ?? []).slice(0, 200) }, 200);
@@ -312,6 +382,7 @@ export class AdminData {
   private async handleRedirects(request: Request): Promise<Response> {
     const actor = await this.getSessionUser(request);
     if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (request.method !== 'GET' && actor.role === 'viewer') return jsonResponse({ error: 'Forbidden' }, 403);
     const state = await this.getState();
     const url = new URL(request.url);
     const id = url.pathname.startsWith('/api/admin/redirects/') ? decodeURIComponent(url.pathname.slice('/api/admin/redirects/'.length)) : '';
@@ -346,6 +417,7 @@ export class AdminData {
   private async handleHomepageSections(request: Request): Promise<Response> {
     const actor = await this.getSessionUser(request);
     if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (request.method === 'PUT' && actor.role === 'viewer') return jsonResponse({ error: 'Forbidden' }, 403);
     const state = await this.getState();
     if (request.method === 'GET') return jsonResponse({ sections: state.homepageSections ?? [] }, 200);
     if (request.method !== 'PUT' || !isSameOrigin(request)) return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -370,6 +442,7 @@ export class AdminData {
   private async handleBackups(request: Request): Promise<Response> {
     const actor = await this.getSessionUser(request);
     if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (actor.role !== 'admin') return jsonResponse({ error: 'Forbidden' }, 403);
     const state = await this.getState();
     const url = new URL(request.url);
     if (request.method === 'GET') return jsonResponse({ backups: (state.backups ?? []).map(({id,label,createdAt}) => ({id,label,createdAt})) }, 200);
@@ -426,8 +499,8 @@ export class AdminData {
   }
 
   private async handleSession(request: Request): Promise<Response> {
-    const authenticated = await this.getSessionUser(request) !== undefined;
-    return jsonResponse({ authenticated }, 200);
+    const user = await this.getSessionUser(request);
+    return jsonResponse({ authenticated: Boolean(user), username: user?.username, role: user?.role }, 200);
   }
 
   private isLoginConfigured(): boolean {
@@ -441,17 +514,9 @@ export class AdminData {
   }
 
   private async handleLogin(request: Request): Promise<Response> {
-    if (request.method !== 'POST') {
-      return jsonResponse({ error: 'Method not allowed' }, 405);
-    }
-    if (!isSameOrigin(request)) {
-      return jsonResponse({ error: 'Forbidden' }, 403);
-    }
-
-    // Fail closed: never fall back to built-in credentials or a built-in secret.
-    if (!this.isLoginConfigured()) {
-      return jsonResponse({ error: 'Admin login is not configured.' }, 503);
-    }
+    if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
+    if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+    if (!this.isLoginConfigured()) return jsonResponse({ error: 'Admin login is not configured.' }, 503);
 
     const clientKey = request.headers.get('CF-Connecting-IP') ?? 'unknown';
     const now = Date.now();
@@ -459,27 +524,33 @@ export class AdminData {
     if (record && now - record.firstAt < LOGIN_WINDOW_MS && record.count >= MAX_LOGIN_FAILURES) {
       return jsonResponse({ error: 'Too many login attempts. Try again later.' }, 429);
     }
-
     const body = await readJsonBody<{ username?: unknown; password?: unknown }>(request);
-    const username = typeof body?.username === 'string' ? body.username : '';
+    const username = typeof body?.username === 'string' ? body.username.trim() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
+    const state = await this.getState();
+    let user = (state.users ?? []).find((item) => item.username.toLowerCase() === username.toLowerCase() && item.active);
+    if (!user && !(state.users ?? []).length &&
+        safeEqual(username, this.secrets.ADMIN_USERNAME as string) &&
+        safeEqual(password, this.secrets.ADMIN_PASSWORD as string)) {
+      const passwordRecord = await hashAdminPassword(password);
+      user = { id: 'usr_root', username, email: '', ...passwordRecord, role: 'admin', active: true, createdAt: now, lastLoginAt: now };
+      state.users = [user];
+      await this.storage.put('admin-state', state);
+    } else if (user && !(await verifyAdminPassword(password, user.passwordSalt, user.passwordHash))) {
+      user = undefined;
+    }
 
-    // Evaluate both comparisons so timing does not reveal which one failed.
-    const userOk = safeEqual(username, this.secrets.ADMIN_USERNAME as string);
-    const passOk = safeEqual(password, this.secrets.ADMIN_PASSWORD as string);
-
-    if (!(userOk && passOk)) {
-      if (!record || now - record.firstAt >= LOGIN_WINDOW_MS) {
-        this.loginFailures.set(clientKey, { count: 1, firstAt: now });
-      } else {
-        record.count += 1;
-      }
+    if (!user) {
+      if (!record || now - record.firstAt >= LOGIN_WINDOW_MS) this.loginFailures.set(clientKey, { count: 1, firstAt: now });
+      else record.count += 1;
       return jsonResponse({ error: 'Invalid login credentials' }, 401);
     }
 
+    user.lastLoginAt = now;
+    await this.storage.put('admin-state', state);
     this.loginFailures.delete(clientKey);
-    const sessionToken = createSessionToken(username, this.secrets.SESSION_SECRET as string);
-    return new Response(JSON.stringify({ authenticated: true }), {
+    const sessionToken = createSessionToken(user.username, user.role, this.secrets.SESSION_SECRET as string);
+    return new Response(JSON.stringify({ authenticated: true, username: user.username, role: user.role }), {
       status: 200,
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
@@ -516,6 +587,7 @@ export class AdminData {
       return jsonResponse({ error: 'Unauthorized' }, 401);
     }
 
+    if (request.method === 'POST' && sessionUser.role !== 'admin') return jsonResponse({ error: 'Forbidden' }, 403);
     if (request.method === 'GET') {
       const settings = await this.getSettings();
       return jsonResponse(settings, 200);
@@ -601,7 +673,9 @@ export class AdminData {
   }
 
   private async handleAdminMessages(request: Request): Promise<Response> {
-    if (!await this.getSessionUser(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const actor = await this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (actor.role !== 'admin') return jsonResponse({ error: 'Forbidden' }, 403);
     const state = await this.getState();
     if (request.method === 'GET') {
       return jsonResponse({ messages: (state.messages ?? []).slice(0, 200) }, 200);
@@ -670,6 +744,7 @@ export class AdminData {
       if (!Array.isArray(state.backups)) state.backups = [];
       if (!Array.isArray(state.media)) state.media = [];
       if (!Array.isArray(state.revokedSessions)) state.revokedSessions = [];
+      if (!Array.isArray(state.users)) state.users = [];
       return state;
     }
 
@@ -681,13 +756,13 @@ export class AdminData {
         { id: 'home_hero', key: 'hero', title: 'Hero section', content: 'Homepage hero content configuration', visible: true, position: 0, updatedAt: Date.now() },
         { id: 'home_tools', key: 'tools', title: 'Image tools', content: 'Homepage tools section configuration', visible: true, position: 1, updatedAt: Date.now() },
         { id: 'home_features', key: 'features', title: 'Why PicShrinkPro', content: 'Homepage features section configuration', visible: true, position: 2, updatedAt: Date.now() },
-      ], backups: [], media: [], revokedSessions: [],
+      ], backups: [], media: [], revokedSessions: [], users: [],
     };
     await this.storage.put('admin-state', freshState);
     return freshState;
   }
 
-  private async getSessionUser(request: Request): Promise<string | undefined> {
+  private async getSessionUser(request: Request): Promise<AdminPrincipal | undefined> {
     const secret = this.secrets.SESSION_SECRET;
     if (!this.isLoginConfigured() || !secret) return undefined;
 
@@ -698,7 +773,10 @@ export class AdminData {
     const state = await this.getState();
     const tokenHash = createHash('sha256').update(match[1]).digest('hex');
     if ((state.revokedSessions ?? []).includes(tokenHash)) return undefined;
-    return verifySessionToken(match[1], secret);
+    const claims = verifySessionToken(match[1], secret);
+    if (!claims) return undefined;
+    const user = (state.users ?? []).find((item) => item.username.toLowerCase() === claims.username.toLowerCase() && item.active);
+    return user ? { username: user.username, role: user.role } : undefined;
   }
 }
 
@@ -756,6 +834,22 @@ function sanitizeCanonicalUrl(value: unknown): string {
   if (typeof value !== 'string' || !value.trim()) return '';
   try { const url = new URL(value.trim()); return ['http:', 'https:'].includes(url.protocol) ? url.toString().slice(0, 500) : ''; }
   catch { return ''; }
+}
+
+async function hashAdminPassword(password: string): Promise<{ passwordSalt: string; passwordHash: string }> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 210_000, hash: 'SHA-256' }, key, 256);
+  return { passwordSalt: Buffer.from(salt).toString('base64url'), passwordHash: Buffer.from(bits).toString('base64url') };
+}
+
+async function verifyAdminPassword(password: string, saltValue: string, expectedHash: string): Promise<boolean> {
+  try {
+    const salt = Buffer.from(saltValue, 'base64url');
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 210_000, hash: 'SHA-256' }, key, 256);
+    return safeEqual(Buffer.from(bits).toString('base64url'), expectedHash);
+  } catch { return false; }
 }
 
 function slugify(value: string): string {
@@ -828,20 +922,21 @@ function sign(payload: string, secret: string): string {
   return createHmac('sha256', secret).update(payload).digest('base64url');
 }
 
-function createSessionToken(username: string, secret: string): string {
-  const payload = toBase64Url(JSON.stringify({ u: username, exp: Date.now() + SESSION_TTL_SECONDS * 1000 }));
+function createSessionToken(username: string, role: AdminRole, secret: string): string {
+  const payload = toBase64Url(JSON.stringify({ u: username, r: role, exp: Date.now() + SESSION_TTL_SECONDS * 1000 }));
   return `${payload}.${sign(payload, secret)}`;
 }
 
-function verifySessionToken(token: string, secret: string): string | undefined {
+function verifySessionToken(token: string, secret: string): { username: string; role: AdminRole } | undefined {
   const [payload, signature, extra] = token.split('.');
   if (!payload || !signature || extra !== undefined) return undefined;
   if (!safeEqual(signature, sign(payload, secret))) return undefined;
 
   try {
-    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { u?: unknown; exp?: unknown };
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { u?: unknown; r?: unknown; exp?: unknown };
     if (typeof data.u !== 'string' || typeof data.exp !== 'number' || data.exp < Date.now()) return undefined;
-    return data.u;
+    const role = data.r === 'editor' || data.r === 'viewer' ? data.r : 'admin';
+    return { username: data.u, role };
   } catch {
     return undefined;
   }
