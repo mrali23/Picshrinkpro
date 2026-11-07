@@ -112,6 +112,7 @@ export class AdminData {
     const path = url.pathname;
 
     if (path === '/api/content' || path.startsWith('/api/content/')) return this.handlePublicContent(request);
+    if (path === '/api/homepage-sections') return this.handlePublicHomepageSections(request);
     if (path.startsWith('/media/')) return this.handlePublicMedia(request);
     if (path === '/api/settings') {
       return this.handleGetPublicSettings();
@@ -413,6 +414,19 @@ export class AdminData {
       return jsonResponse({ deleted: true }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+
+  private async handlePublicHomepageSections(request: Request): Promise<Response> {
+    if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+    const state = await this.getState();
+    return new Response(JSON.stringify({ sections: state.homepageSections ?? defaultHomepageSections() }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'public, max-age=60, stale-while-revalidate=300',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
   }
 
   private async handleHomepageSections(request: Request): Promise<Response> {
@@ -766,7 +780,7 @@ export class AdminData {
       if (!Array.isArray(state.content)) state.content = [];
       if (!Array.isArray(state.activity)) state.activity = [];
       if (!Array.isArray(state.redirects)) state.redirects = [];
-      if (!Array.isArray(state.homepageSections)) state.homepageSections = [];
+      if (!Array.isArray(state.homepageSections) || state.homepageSections.length === 0) state.homepageSections = defaultHomepageSections();
       if (!Array.isArray(state.backups)) state.backups = [];
       if (!Array.isArray(state.media)) state.media = [];
       if (!Array.isArray(state.revokedSessions)) state.revokedSessions = [];
@@ -779,11 +793,7 @@ export class AdminData {
       settings: { ...DEFAULT_SITE_SETTINGS },
       events: [],
       messages: [], content: [], activity: [], redirects: [],
-      homepageSections: [
-        { id: 'home_hero', key: 'hero', title: 'Hero section', content: 'Homepage hero content configuration', visible: true, position: 0, updatedAt: Date.now() },
-        { id: 'home_tools', key: 'tools', title: 'Image tools', content: 'Homepage tools section configuration', visible: true, position: 1, updatedAt: Date.now() },
-        { id: 'home_features', key: 'features', title: 'Why PicShrinkPro', content: 'Homepage features section configuration', visible: true, position: 2, updatedAt: Date.now() },
-      ], backups: [], media: [], revokedSessions: [], users: [], loginAttempts: [],
+      homepageSections: defaultHomepageSections(), backups: [], media: [], revokedSessions: [], users: [], loginAttempts: [],
     };
     await this.storage.put('admin-state', freshState);
     return freshState;
@@ -877,6 +887,15 @@ async function verifyAdminPassword(password: string, saltValue: string, expected
     const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 210_000, hash: 'SHA-256' }, key, 256);
     return safeEqual(Buffer.from(bits).toString('base64url'), expectedHash);
   } catch { return false; }
+}
+
+function defaultHomepageSections(): HomepageSection[] {
+  const now = Date.now();
+  return [
+    { id: 'home_hero', key: 'hero', title: 'Free Online Image Tools That Respect Your Privacy', content: 'Compress, remove backgrounds, resize, crop, and convert JPG, PNG, WebP, and PDF instantly. Free browser-based tools with no watermark; image processing stays on your device.', visible: true, position: 0, updatedAt: now },
+    { id: 'home_tools', key: 'tools', title: 'All 9 Free Online Image Tools', content: 'Every tool you need to compress, remove background, filter, enhance, format, and package images—100% free and in-browser.', visible: true, position: 1, updatedAt: now },
+    { id: 'home_features', key: 'features', title: 'Engineered for Speed, Privacy & Simplicity', content: 'Why Choose PicShrinkPro', visible: true, position: 2, updatedAt: now },
+  ];
 }
 
 function slugify(value: string): string {
