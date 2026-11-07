@@ -65,7 +65,7 @@ interface AdminState {
   activity?: AdminActivity[];
   redirects?: ManagedRedirect[];
   homepageSections?: HomepageSection[];
-  backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups'> }>;
+  backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups' | 'media' | 'users' | 'revokedSessions' | 'loginAttempts'> }>;
   media?: MediaAsset[];
   revokedSessions?: string[];
   users?: AdminUserRecord[];
@@ -450,8 +450,8 @@ export class AdminData {
     if (request.method === 'POST' && url.pathname === '/api/admin/backups') {
       if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
       const body = await readJsonBody<{ label?: unknown }>(request);
-      const { backups: previousBackups, ...snapshot } = state;
-      void previousBackups;
+      const { backups: previousBackups, media: currentMedia, users: currentUsers, revokedSessions: currentRevocations, loginAttempts: currentLoginAttempts, ...snapshot } = state;
+      void previousBackups; void currentMedia; void currentUsers; void currentRevocations; void currentLoginAttempts;
       const backup = { id: `bkp_${Date.now().toString(36)}`, label: typeof body?.label === 'string' ? body.label.slice(0,100) : 'Manual backup', createdAt: Date.now(), snapshot };
       state.backups = [backup, ...(state.backups ?? [])].slice(0, 20);
       await this.storage.put('admin-state', state);
@@ -463,7 +463,7 @@ export class AdminData {
       const id = decodeURIComponent(url.pathname.split('/').slice(-2)[0]);
       const backup = (state.backups ?? []).find((item) => item.id === id);
       if (!backup) return jsonResponse({ error: 'Backup not found.' }, 404);
-      const restored = { ...backup.snapshot, backups: state.backups };
+      const restored = { ...backup.snapshot, backups: state.backups, media: state.media, users: state.users, revokedSessions: state.revokedSessions, loginAttempts: state.loginAttempts };
       await this.storage.put('admin-state', restored);
       await this.recordActivity(actor.username, 'restore', 'backup', id);
       return jsonResponse({ restored: true }, 200);
