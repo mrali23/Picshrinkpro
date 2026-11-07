@@ -228,7 +228,7 @@ export class AdminData {
         status,
         seoTitle: typeof body.seoTitle === 'string' ? body.seoTitle.slice(0,180) : current.seoTitle,
         metaDescription: typeof body.metaDescription === 'string' ? body.metaDescription.slice(0,300) : current.metaDescription,
-        canonicalUrl: typeof body.canonicalUrl === 'string' ? body.canonicalUrl.slice(0,500) : current.canonicalUrl,
+        canonicalUrl: body.canonicalUrl === undefined ? current.canonicalUrl : sanitizeCanonicalUrl(body.canonicalUrl),
         ogImageUrl: typeof body.ogImageUrl === 'string' ? body.ogImageUrl.slice(0,1000) : current.ogImageUrl,
         updatedAt: Date.now(), publishedAt: status === 'published' ? (current.publishedAt ?? Date.now()) : undefined,
         version: current.version + 1,
@@ -746,6 +746,12 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   adsensePublisherId: '',
   adSlots: { top: '', sidebar: '', bottom: '' },
 };
+
+function sanitizeCanonicalUrl(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  try { const url = new URL(value.trim()); return ['http:', 'https:'].includes(url.protocol) ? url.toString().slice(0, 500) : ''; }
+  catch { return ''; }
+}
 
 function slugify(value: string): string {
   return value.toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 160);
