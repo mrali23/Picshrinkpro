@@ -260,6 +260,30 @@ test('CMS scheduled articles stay private until the authenticated publisher runs
   assert.ok(publishedItems.some((item) => item.slug === 'scheduled-release'));
 });
 
+
+test('website builder publishes validated navigation links to the public header', async () => {
+  const app = createTestApp();
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const save = await app.fetch('/api/admin/navigation', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ links: [
+      { id: 'nav_custom', label: 'Guides', url: '/blog', visible: true },
+      { id: 'nav_hidden', label: 'Hidden', url: '/about', visible: false },
+    ] }),
+  });
+  assert.equal(save.status, 200);
+  const publicNavigation = await app.fetch('/api/navigation');
+  const links = (await publicNavigation.json() as { links: Array<{ label: string; url: string }> }).links;
+  assert.deepEqual(links.map((item) => [item.label, item.url]), [['Guides', '/blog']]);
+
+  const invalid = await app.fetch('/api/admin/navigation', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ links: [{ label: 'External', url: '//evil.example' }] }),
+  });
+  assert.equal(invalid.status, 400);
+});
+
 test('public homepage sections and sitemap expose only public configuration and published posts', async () => {
   const staticSitemap = '<?xml version="1.0" encoding="UTF-8"?>\\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://picshrink.test/</loc></url></urlset>';
   const app = createTestApp(TEST_SECRETS, { '/sitemap.xml': staticSitemap });
