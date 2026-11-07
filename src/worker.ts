@@ -69,7 +69,7 @@ interface AdminState {
   redirects?: ManagedRedirect[];
   homepageSections?: HomepageSection[];
   navigationLinks?: ManagedNavigationLink[];
-  backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups'> }>;
+  backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups' | 'users' | 'revokedSessions' | 'loginAttempts'>; mediaCopies: Array<{ sourceKey: string; backupKey: string }> }>;
   media?: MediaAsset[];
   revokedSessions?: string[];
   users?: AdminUserRecord[];
@@ -575,31 +575,77 @@ export class AdminData {
     if (actor.role !== 'admin') return jsonResponse({ error: 'Forbidden' }, 403);
     const state = await this.getState();
     const url = new URL(request.url);
-    if (request.method === 'GET') return jsonResponse({ backups: (state.backups ?? []).map(({id,label,createdAt}) => ({id,label,createdAt})) }, 200);
+    if (request.method === 'GET') return jsonResponse({ backups: (state.backups ?? []).map(({id,label,createdAt,mediaCopies}) => ({id,label,createdAt,mediaObjectCount:mediaCopies?.length ?? 0})) }, 200);
     if (request.method === 'POST' && url.pathname === '/api/admin/backups') {
       if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
-      const body = await readJsonBody<{ label?: unknown }>(request);
-      const { backups: previousBackups, ...snapshot } = state;
-      void previousBackups;
-      const backup = { id: `bkp_${Date.now().toString(36)}`, label: typeof body?.label === 'string' ? body.label.slice(0,100) : 'Manual backup', createdAt: Date.now(), snapshot };
-      state.backups = [backup, ...(state.backups ?? [])].slice(0, 20);
+      const body = (await readJsonBody<{ label?: unknown }>(request)) ?? {};
+      const media = state.media ?? [];
+      if (media.length && !this.mediaBucket) return jsonResponse({ error: 'R2 media storage is not configured; media-inclusive backups cannot be created.' }, 503);
+      const id = `bkp_${Date.now().toString(36)}`;
+      const mediaCopies: Array<{ sourceKey: string; backupKey: string }> = [];
+      try {
+        for (const asset of media) {
+          const object = await this.mediaBucket!.get(asset.key);
+          if (!object?.body) throw new Error(`Media object is missing: ${asset.name}`);
+          const backupKey = `backups/${id}/${asset.key}`;
+          await this.mediaBucket!.put(backupKey, object.body, { httpMetadata: { contentType: object.httpMetadata?.contentType ?? asset.type } });
+          mediaCopies.push({ sourceKey: asset.key, backupKey });
+        }
+      } catch (error) {
+        await Promise.all(mediaCopies.map((item) => this.mediaBucket!.delete(item.backupKey).catch(() => undefined)));
+        return jsonResponse({ error: error instanceof Error ? `Backup media copy failed: ${error.message}` : 'Backup media copy failed.' }, 500);
+      }
+      const { backups: previousBackups, users, revokedSessions, loginAttempts, ...snapshot } = state;
+      const backup = {
+        id,
+        label: typeof body.label === 'string' ? body.label.slice(0,100) : 'Manual backup',
+        createdAt: Date.now(),
+        snapshot,
+        mediaCopies,
+      };
+      const nextBackups = [backup, ...(previousBackups ?? [])].slice(0, 20);
+      const removedBackups = (previousBackups ?? []).slice(19);
+      state.backups = nextBackups;
       await this.storage.put('admin-state', state);
+      if (this.mediaBucket) {
+        await Promise.all(removedBackups.flatMap((old) => (old.mediaCopies ?? []).map((item) => this.mediaBucket!.delete(item.backupKey).catch(() => undefined))));
+      }
       await this.recordActivity(actor.username, 'create', 'backup', backup.id);
-      return jsonResponse({ backup: { id: backup.id, label: backup.label, createdAt: backup.createdAt } }, 201);
+      return jsonResponse({ backup: { id: backup.id, label: backup.label, createdAt: backup.createdAt, mediaObjectCount: mediaCopies.length } }, 201);
     }
     if (request.method === 'POST' && url.pathname.endsWith('/restore')) {
       if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
       const id = decodeURIComponent(url.pathname.split('/').slice(-2)[0]);
       const backup = (state.backups ?? []).find((item) => item.id === id);
       if (!backup) return jsonResponse({ error: 'Backup not found.' }, 404);
-      const restored = { ...backup.snapshot, backups: state.backups };
+      const mediaCopies = backup.mediaCopies ?? [];
+      if (mediaCopies.length && !this.mediaBucket) return jsonResponse({ error: 'R2 media storage is not configured; this backup cannot restore media.' }, 503);
+      try {
+        for (const copy of mediaCopies) {
+          const object = await this.mediaBucket!.get(copy.backupKey);
+          if (!object?.body) throw new Error(`Backup media object is missing: ${copy.backupKey}`);
+          await this.mediaBucket!.put(copy.sourceKey, object.body, { httpMetadata: { contentType: object.httpMetadata?.contentType ?? 'application/octet-stream' } });
+        }
+        const restoredMediaKeys = new Set((backup.snapshot.media ?? []).map((asset) => asset.key));
+        for (const asset of state.media ?? []) {
+          if (!restoredMediaKeys.has(asset.key)) await this.mediaBucket?.delete(asset.key);
+        }
+      } catch (error) {
+        return jsonResponse({ error: error instanceof Error ? `Backup restore failed: ${error.message}` : 'Backup restore failed.' }, 500);
+      }
+      const restored = {
+        ...backup.snapshot,
+        backups: state.backups,
+        users: state.users,
+        revokedSessions: state.revokedSessions,
+        loginAttempts: state.loginAttempts,
+      };
       await this.storage.put('admin-state', restored);
       await this.recordActivity(actor.username, 'restore', 'backup', id);
-      return jsonResponse({ restored: true }, 200);
+      return jsonResponse({ restored: true, mediaObjectCount: mediaCopies.length }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
   }
-
 
   private async handlePublicMedia(request: Request): Promise<Response> {
     if (request.method !== 'GET' && request.method !== 'HEAD') return jsonResponse({ error: 'Method not allowed' }, 405);
