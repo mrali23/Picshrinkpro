@@ -189,6 +189,12 @@ test('CMS supports draft creation, versioned editing, publishing, and public rea
   const publicArticle = await app.fetch('/api/content/managed-article');
   assert.equal(publicArticle.status, 200);
   assert.equal((await publicArticle.json() as { content: { status: string } }).content.status, 'published');
+  const articlePage = await app.fetch('/blog/managed-article');
+  assert.equal(articlePage.status, 200);
+  const articleHtml = await articlePage.text();
+  assert.match(articleHtml, /<h1[^>]*>A Managed Article<\\/h1>/);
+  assert.match(articleHtml, /canonical/);
+  assert.match(articleHtml, /First paragraph/);
   const publicIndex = await app.fetch('/api/content');
   assert.equal((await publicIndex.json() as { content: unknown[] }).content.length, 1);
 });
