@@ -73,7 +73,23 @@ All sensitive routes must authorize on the Worker. UI visibility is not an autho
 
 ## Infrastructure provisioning required before deployment
 
-The repository does not currently contain a D1 database ID or R2 bucket binding. Create the D1 database and R2 bucket in the target Cloudflare account, then add their generated identifiers to `wrangler.jsonc`. Do not commit account credentials. Apply migrations with Wrangler before deploying the Worker.
+The R2 binding is declared in `wrangler.jsonc` as `MEDIA` and expects a bucket named `picshrinkpro-media`. Create it in the same Cloudflare account before deployment:
+
+```bash
+bunx wrangler r2 bucket create picshrinkpro-media
+```
+
+Configure the bootstrap credentials as Worker secrets (never as `VITE_*` variables):
+
+```bash
+bunx wrangler secret put ADMIN_USERNAME
+bunx wrangler secret put ADMIN_PASSWORD
+bunx wrangler secret put SESSION_SECRET
+```
+
+Use a long, unique session secret of at least 32 characters. For local Worker development, place the same values in an untracked `.dev.vars` file. The first successful bootstrap login creates the initial admin account with a PBKDF2-SHA-256 password hash; subsequent accounts are created through the Users & roles module.
+
+The D1 migration is prepared but there is no D1 binding/database ID yet, and the current admin APIs have not been migrated to D1. Do not provision a placeholder ID or claim D1 is active. Apply the migration only after the D1 binding and data migration implementation are added. Do not commit account credentials.
 
 ## Implementation status on `feat/production-admin-control-center`
 
