@@ -19,6 +19,15 @@ import { TOOLS_DATA } from '../../data/toolsData';
 import { usePublicSiteSettings } from '../../utils/siteSettings';
 import { LogoMark } from '../common/Logo';
 
+interface ManagedNavigationLink { id: string; label: string; url: string; visible: boolean; position: number; }
+const DEFAULT_NAV_LINKS: ManagedNavigationLink[] = [
+  { id: 'nav_compress', label: 'Compress', url: '/compressor', visible: true, position: 0 },
+  { id: 'nav_bg', label: 'Remove BG', url: '/bg-remover', visible: true, position: 1 },
+  { id: 'nav_resize', label: 'Resize', url: '/resizer', visible: true, position: 2 },
+  { id: 'nav_blog', label: 'Blog', url: '/blog', visible: true, position: 3 },
+  { id: 'nav_about', label: 'About', url: '/about', visible: true, position: 4 },
+];
+
 const iconMap: Record<string, any> = {
   Minimize2,
   Scissors,
@@ -34,9 +43,19 @@ const iconMap: Record<string, any> = {
 export function Navbar() {
   const [toolsDropdownOpen, setToolsDropdownOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [managedLinks, setManagedLinks] = useState<ManagedNavigationLink[]>(DEFAULT_NAV_LINKS);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const { siteName } = usePublicSiteSettings();
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/navigation', { headers: { Accept: 'application/json' } })
+      .then(async (response) => response.ok ? response.json() as Promise<{ links: ManagedNavigationLink[] }> : null)
+      .then((result) => { if (active && result?.links) setManagedLinks(result.links); })
+      .catch(() => { /* Keep the built-in navigation when the public config API is unavailable. */ });
+    return () => { active = false; };
+  }, []);
 
   // Close menus on route change
   useEffect(() => {
@@ -78,41 +97,11 @@ export function Navbar() {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">
-            {/* Quick Link 1: Compressor */}
-            <Link
-              to="/compressor"
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                location.pathname === '/compressor'
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'text-slate-700 hover:text-blue-600 hover:bg-slate-50'
-              }`}
-            >
-              Compress
-            </Link>
-
-            {/* Quick Link 2: BG Remover */}
-            <Link
-              to="/bg-remover"
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                location.pathname === '/bg-remover'
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'text-slate-700 hover:text-blue-600 hover:bg-slate-50'
-              }`}
-            >
-              Remove BG
-            </Link>
-
-            {/* Quick Link 3: Resizer */}
-            <Link
-              to="/resizer"
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                location.pathname === '/resizer'
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'text-slate-700 hover:text-blue-600 hover:bg-slate-50'
-              }`}
-            >
-              Resize
-            </Link>
+            {managedLinks.filter((item) => item.visible).map((item) => (
+              <Link key={item.id} to={item.url} className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${location.pathname === item.url || (item.url !== '/' && location.pathname.startsWith(item.url + '/')) ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-slate-700 hover:text-blue-600 hover:bg-slate-50'}`}>
+                {item.label}
+              </Link>
+            ))}
 
             {/* All Tools Mega Dropdown */}
             <div className="relative" ref={dropdownRef}>
@@ -172,29 +161,6 @@ export function Navbar() {
               )}
             </div>
 
-            {/* Blog */}
-            <Link
-              to="/blog"
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                location.pathname.startsWith('/blog')
-                  ? 'bg-blue-50 text-blue-600 font-semibold'
-                  : 'text-slate-700 hover:text-blue-600 hover:bg-slate-50'
-              }`}
-            >
-              Blog
-            </Link>
-
-            {/* About */}
-            <Link
-              to="/about"
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                location.pathname === '/about'
-                  ? 'bg-blue-50 text-blue-600 font-semibold'
-                  : 'text-slate-700 hover:text-blue-600 hover:bg-slate-50'
-              }`}
-            >
-              About
-            </Link>
           </nav>
 
           {/* Right badge: local image processing */}
@@ -244,18 +210,11 @@ export function Navbar() {
           </div>
 
           <div className="border-t border-slate-100 pt-3 flex flex-col space-y-1">
-            <Link
-              to="/blog"
-              className="px-3 py-2 text-sm font-semibold text-slate-700 hover:text-blue-600 rounded-lg hover:bg-slate-50"
-            >
-              Blog &amp; Guides
-            </Link>
-            <Link
-              to="/about"
-              className="px-3 py-2 text-sm font-semibold text-slate-700 hover:text-blue-600 rounded-lg hover:bg-slate-50"
-            >
-              About PicShrink
-            </Link>
+            {managedLinks.filter((item) => item.visible).map((item) => (
+              <Link key={item.id} to={item.url} className="px-3 py-2 text-sm font-semibold text-slate-700 hover:text-blue-600 rounded-lg hover:bg-slate-50">
+                {item.label}
+              </Link>
+            ))}
             <Link
               to="/contact"
               className="px-3 py-2 text-sm font-semibold text-slate-700 hover:text-blue-600 rounded-lg hover:bg-slate-50"
