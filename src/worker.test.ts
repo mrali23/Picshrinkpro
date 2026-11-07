@@ -123,6 +123,44 @@ test('analytics events update shared live dashboard metrics', async () => {
 
 
 
+
+test('admin user management hashes passwords and enforces editor/viewer roles', async () => {
+  const app = createTestApp();
+  const rootLogin = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const rootCookie = rootLogin.headers.get('Set-Cookie')!.split(';')[0];
+  const create = await app.fetch('/api/admin/users', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: rootCookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ username: 'content-editor', email: 'editor@example.com', password: 'long-test-password-123', role: 'editor' }),
+  });
+  assert.equal(create.status, 201);
+  const user = (await create.json() as { user: { id: string; role: string } }).user;
+  assert.equal(user.role, 'editor');
+
+  const editorLogin = await app.fetch('/api/admin/login', loginRequest('content-editor', 'long-test-password-123'));
+  assert.equal(editorLogin.status, 200);
+  const editorCookie = editorLogin.headers.get('Set-Cookie')!.split(';')[0];
+  const session = await app.fetch('/api/admin/session', { headers: { Cookie: editorCookie } });
+  assert.deepEqual(await session.json(), { authenticated: true, username: 'content-editor', role: 'editor' });
+
+  const forbiddenSettingsWrite = await app.fetch('/api/admin/settings', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: editorCookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(forbiddenSettingsWrite.status, 403);
+  const editorContentRead = await app.fetch('/api/admin/content', { headers: { Cookie: editorCookie } });
+  assert.equal(editorContentRead.status, 200);
+  const privateInbox = await app.fetch('/api/admin/messages', { headers: { Cookie: editorCookie } });
+  assert.equal(privateInbox.status, 403);
+
+  const disable = await app.fetch('/api/admin/users/' + user.id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: rootCookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ active: false }),
+  });
+  assert.equal(disable.status, 200);
+  const revokedSession = await app.fetch('/api/admin/session', { headers: { Cookie: editorCookie } });
+  assert.deepEqual(await revokedSession.json(), { authenticated: false, username: undefined, role: undefined });
+});
+
 test('CMS supports draft creation, versioned editing, publishing, and public reads', async () => {
   const app = createTestApp();
   const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
