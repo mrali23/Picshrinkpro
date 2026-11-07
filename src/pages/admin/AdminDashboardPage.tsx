@@ -21,6 +21,7 @@ interface ActivityEntry { id: string; actor: string; action: string; resource: s
 interface BackupEntry { id: string; label: string; createdAt: number; }
 interface MediaAsset { id: string; key: string; name: string; type: string; size: number; createdAt: number; }
 interface ManagedContent { id: string; title: string; slug: string; excerpt: string; body: string; status: 'draft' | 'published' | 'scheduled' | 'archived'; scheduledAt?: number; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; createdAt: number; updatedAt: number; publishedAt?: number; version: number; }
+interface ManagedRevision { id: string; contentId: string; version: number; title: string; slug: string; status: ManagedContent['status']; createdAt: number; actor: string; }
 
 interface ContactMessage {
   id: string; name: string; email: string; subject: string; message: string;
@@ -56,6 +57,7 @@ function AdminDashboardContent() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [contentItems, setContentItems] = useState<ManagedContent[]>([]);
+  const [contentRevisions, setContentRevisions] = useState<ManagedRevision[]>([]);
   const [redirects, setRedirects] = useState<ManagedRedirect[]>([]);
   const [sections, setSections] = useState<ManagedSection[]>([]);
   const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
@@ -260,6 +262,7 @@ function AdminDashboardContent() {
 
   const resetContentDraft = () => {
     setEditingContentId(null);
+    setContentRevisions([]);
     setContentDraft({ title: '', slug: '', excerpt: '', body: '', status: 'draft', scheduledAt: '', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '' });
   };
 
@@ -283,8 +286,27 @@ function AdminDashboardContent() {
 
   const editContent = (item: ManagedContent) => {
     setEditingContentId(item.id);
+    requestJson<{ revisions: ManagedRevision[] }>('/api/admin/content/' + encodeURIComponent(item.id) + '/revisions')
+      .then((result) => setContentRevisions(result.revisions))
+      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Revision history could not be loaded.'));
     setContentDraft({ title: item.title, slug: item.slug, excerpt: item.excerpt, body: item.body, status: item.status === 'published' || item.status === 'scheduled' ? item.status : 'draft', scheduledAt: item.scheduledAt ? new Date(item.scheduledAt - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0,16) : '', seoTitle: item.seoTitle, metaDescription: item.metaDescription, canonicalUrl: item.canonicalUrl, ogImageUrl: item.ogImageUrl });
     setError(''); setNotice('');
+  };
+
+  const restoreContentRevision = async (revision: ManagedRevision) => {
+    const current = contentItems.find((item) => item.id === revision.contentId);
+    if (!current) return;
+    if (!window.confirm('Restore version ' + revision.version + '? The restored article will be saved as a draft for review.')) return;
+    try {
+      const result = await requestJson<{ content: ManagedContent }>('/api/admin/content/' + encodeURIComponent(current.id) + '/revisions/' + encodeURIComponent(revision.id) + '/restore', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: current.version }),
+      });
+      setContentItems((items) => items.map((item) => item.id === current.id ? result.content : item));
+      setContentDraft({ title: result.content.title, slug: result.content.slug, excerpt: result.content.excerpt, body: result.content.body, status: 'draft', scheduledAt: '', seoTitle: result.content.seoTitle, metaDescription: result.content.metaDescription, canonicalUrl: result.content.canonicalUrl, ogImageUrl: result.content.ogImageUrl });
+      const history = await requestJson<{ revisions: ManagedRevision[] }>('/api/admin/content/' + encodeURIComponent(current.id) + '/revisions');
+      setContentRevisions(history.revisions);
+      setNotice('Revision restored as a draft. Review it before publishing.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Revision could not be restored.'); }
   };
 
   const deleteContent = async (item: ManagedContent) => {
@@ -495,6 +517,10 @@ function AdminDashboardContent() {
               <label className="block text-sm font-semibold text-slate-700">Open Graph image URL<input value={contentDraft.ogImageUrl} onChange={(e) => setContentDraft((v) => ({...v,ogImageUrl:e.target.value}))} placeholder="Optional image URL" className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label>
               <label className="block text-sm font-semibold text-slate-700">Publication status<select value={contentDraft.status} onChange={(e) => setContentDraft((v) => ({...v,status:e.target.value as 'draft'|'published'|'scheduled'}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"><option value="draft">Draft</option><option value="published">Publish now</option><option value="scheduled">Schedule</option></select></label>
               {contentDraft.status === 'scheduled' && <label className="block text-sm font-semibold text-slate-700">Publish date and time<input required type="datetime-local" min={new Date(Date.now() + 60_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0,16)} value={contentDraft.scheduledAt} onChange={(e) => setContentDraft((v) => ({...v,scheduledAt:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/><span className="mt-1 block text-xs font-normal text-slate-500">The Worker publishes scheduled articles every minute. Keep the site Worker cron trigger enabled.</span></label>}
+              {editingContentId && <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div><h3 className="text-sm font-bold text-slate-800">Revision history</h3><p className="text-xs text-slate-500">Each save preserves the previous version. Restores create a new draft.</p></div>
+                {contentRevisions.length ? contentRevisions.map((revision) => <div key={revision.id} className="flex items-center justify-between gap-2 rounded-lg bg-white p-2.5 text-xs"><div className="min-w-0"><p className="truncate font-semibold text-slate-700">v{revision.version} · {revision.title}</p><p className="text-slate-400">{revision.status} · {revision.actor} · {new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(revision.createdAt)}</p></div><button type="button" onClick={() => restoreContentRevision(revision)} className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1.5 font-semibold text-blue-700 hover:bg-blue-50">Restore</button></div>) : <p className="text-xs text-slate-400">No earlier versions yet. Save an edit to create the first revision.</p>}
+              </div>}
               <div className="flex flex-wrap gap-2"><button disabled={busy} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save article'}</button><button type="button" onClick={resetContentDraft} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600">Clear</button></div>
             </form>
           </section>
