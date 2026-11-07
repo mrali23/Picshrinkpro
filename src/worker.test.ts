@@ -276,12 +276,18 @@ test('public homepage sections and sitemap expose only public configuration and 
     body: JSON.stringify({ title: 'Sitemap Managed Article', slug: 'sitemap-managed-article', excerpt: 'Published sitemap test', body: 'Content', status: 'published' }),
   });
   assert.equal(create.status, 201);
+  const excluded = await app.fetch('/api/admin/content', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'Hidden Sitemap Article', slug: 'hidden-sitemap-article', excerpt: 'No sitemap', body: 'Content', status: 'published', includeInSitemap: false }),
+  });
+  assert.equal(excluded.status, 201);
   const sitemap = await app.fetch('/sitemap.xml');
   assert.equal(sitemap.status, 200);
   assert.match(sitemap.headers.get('Content-Type') ?? '', /application\/xml/);
   const xml = await sitemap.text();
   assert.match(xml, /https:\/\/picshrink.test\/blog\/sitemap-managed-article/);
   assert.match(xml, /https:\/\/picshrink.test\//);
+  assert.ok(!xml.includes('hidden-sitemap-article'));
 });
 
 test('SEO redirects are validated, listed, and applied by the Worker', async () => {
