@@ -1112,6 +1112,50 @@ export function withSecurityHeaders(response: Response, pathname: string): Respo
   });
 }
 
+interface PublicManagedArticle {
+  title: string; slug: string; excerpt: string; body: string; seoTitle?: string;
+  metaDescription?: string; canonicalUrl?: string; ogImageUrl?: string;
+  publishedAt?: number; updatedAt: number;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderManagedArticleHtml(article: PublicManagedArticle, url: URL, stylesheetLinks: string): Response {
+  const title = article.seoTitle?.trim() || article.title;
+  const description = article.metaDescription?.trim() || article.excerpt;
+  const canonical = sanitizeCanonicalUrl(article.canonicalUrl) || `${url.origin}/blog/${encodeURIComponent(article.slug)}`;
+  const image = safePublicUrl(article.ogImageUrl) || 'https://picshrinkpro.com/og-image.png';
+  const paragraphs = article.body.split(/\\r?\\n\\s*\\r?\\n/g).map((part) => part.trim()).filter(Boolean)
+    .map((part) => `<p class="mb-5 text-base leading-8 text-slate-700">${escapeHtml(part).replace(/\\r?\\n/g, '<br>')}</p>`).join('\\n');
+  const published = article.publishedAt ? new Date(article.publishedAt).toISOString() : new Date(article.updatedAt).toISOString();
+  const schema = JSON.stringify({
+    '@context': 'https://schema.org', '@type': 'BlogPosting', headline: article.title,
+    description, datePublished: published, dateModified: new Date(article.updatedAt).toISOString(),
+    mainEntityOfPage: canonical, image, publisher: { '@type': 'Organization', name: 'PicShrinkPro', url: 'https://picshrinkpro.com/' },
+  }).replace(/</g, '\\u003c');
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)} | PicShrinkPro</title><meta name="description" content="${escapeHtml(description)}">
+<meta name="robots" content="index, follow, max-image-preview:large"><link rel="canonical" href="${escapeHtml(canonical)}">
+<meta property="og:type" content="article"><meta property="og:title" content="${escapeHtml(title)}"><meta property="og:description" content="${escapeHtml(description)}"><meta property="og:url" content="${escapeHtml(canonical)}"><meta property="og:image" content="${escapeHtml(image)}">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(title)}"><meta name="twitter:description" content="${escapeHtml(description)}"><meta name="twitter:image" content="${escapeHtml(image)}">
+${stylesheetLinks}<script type="application/ld+json">${schema}</script></head>
+<body class="min-h-screen bg-slate-50 text-slate-800"><header class="border-b border-slate-200 bg-white"><div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-4"><a class="text-xl font-black text-blue-700" href="/">PicShrinkPro</a><nav class="flex gap-5 text-sm font-semibold text-slate-600"><a href="/blog">Blog</a><a href="/compressor">Image compressor</a><a href="/contact">Contact</a></nav></div></header>
+<main class="mx-auto max-w-4xl px-4 py-12 sm:py-16"><nav class="mb-8 text-sm text-slate-500"><a href="/" class="hover:text-blue-600">Home</a> / <a href="/blog" class="hover:text-blue-600">Blog</a> / <span>${escapeHtml(article.title)}</span></nav>
+<article><header class="mb-10"><p class="mb-3 text-xs font-bold uppercase tracking-wider text-blue-600">PicShrinkPro Guides</p><h1 class="text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl">${escapeHtml(article.title)}</h1><p class="mt-5 text-lg leading-8 text-slate-600">${escapeHtml(article.excerpt)}</p><p class="mt-4 text-xs text-slate-400">Updated ${new Date(article.updatedAt).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'})}</p></header>
+<div class="prose prose-slate max-w-none">${paragraphs}</div></article><div class="mt-12 border-t border-slate-200 pt-6"><a href="/blog" class="font-semibold text-blue-700">← Back to all articles</a></div></main>
+<footer class="border-t border-slate-200 bg-white py-8 text-center text-sm text-slate-500">© ${new Date().getFullYear()} PicShrinkPro</footer></body></html>`;
+  return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' } });
+}
+
+function safePublicUrl(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  try { const url = new URL(value.trim()); return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : ''; }
+  catch { return ''; }
+}
+
 const worker = {
   async scheduled(_controller: { scheduledTime: number; cron: string }, env: Env, ctx: { waitUntil(promise: Promise<unknown>): void }): Promise<void> {
     if (!env.SESSION_SECRET) return;
@@ -1125,7 +1169,27 @@ const worker = {
     const url = new URL(request.url);
     let response: Response;
 
-    if (url.pathname === '/sitemap.xml' && request.method === 'GET') {
+    if (url.pathname.startsWith('/blog/') && request.method === 'GET' && !url.pathname.endsWith('.md')) {
+      let slug = '';
+      try { slug = decodeURIComponent(url.pathname.slice('/blog/'.length)); } catch { slug = ''; }
+      const articleResponse = slug ? await adminApi(new Request(new URL('/api/content/' + encodeURIComponent(slug), url), { method: 'GET' }), env) : new Response(null, { status: 404 });
+      if (articleResponse.ok) {
+        const result = await articleResponse.json() as { content: PublicManagedArticle };
+        const shellResponse = await env.ASSETS.fetch(new Request(new URL('/', url)));
+        const shell = shellResponse.ok ? await shellResponse.text() : '';
+        const stylesheetLinks = [...shell.matchAll(/<link\\b[^>]*rel=[\"']stylesheet[\"'][^>]*>/gi)].map((match) => match[0]).join('\\n');
+        response = renderManagedArticleHtml(result.content, url, stylesheetLinks);
+      } else {
+        const redirectResponse = await adminApi(new Request(new URL(`/api/redirect/resolve?path=${encodeURIComponent(url.pathname)}`, url), { method: 'GET' }), env);
+        if (redirectResponse.ok) {
+          const redirect = await redirectResponse.json() as { destinationUrl: string; statusCode: number };
+          response = Response.redirect(new URL(redirect.destinationUrl, url).toString(), redirect.statusCode);
+        } else {
+          const markdownResponse = await markdownForRequest(request, env);
+          response = markdownResponse ?? await env.ASSETS.fetch(request);
+        }
+      }
+    } else if (url.pathname === '/sitemap.xml' && request.method === 'GET') {
       const staticSitemap = await env.ASSETS.fetch(request);
       const staticXml = staticSitemap.ok ? await staticSitemap.text() : '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>';
       const contentResponse = await adminApi(new Request(new URL('/api/sitemap-content', url), { method: 'GET' }), env);
