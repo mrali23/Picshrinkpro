@@ -152,6 +152,14 @@ test('admin user management hashes passwords and enforces editor/viewer roles', 
   const privateInbox = await app.fetch('/api/admin/messages', { headers: { Cookie: editorCookie } });
   assert.equal(privateInbox.status, 403);
 
+  const revokeSessions = await app.fetch('/api/admin/users/' + user.id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: rootCookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ revokeSessions: true }),
+  });
+  assert.equal(revokeSessions.status, 200);
+  const revokedEditorSession = await app.fetch('/api/admin/session', { headers: { Cookie: editorCookie } });
+  assert.deepEqual(await revokedEditorSession.json(), { authenticated: false });
+
   const disable = await app.fetch('/api/admin/users/' + user.id, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: rootCookie, Origin: 'https://picshrink.test' },
     body: JSON.stringify({ active: false }),
