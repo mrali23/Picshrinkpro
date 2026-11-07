@@ -120,6 +120,52 @@ test('analytics events update shared live dashboard metrics', async () => {
   assert.deepEqual(metrics.popularTools, [{ name: 'COMPRESSOR', count: 1 }]);
 });
 
+
+test('contact form submissions are persisted and manageable from the authenticated inbox', async () => {
+  const app = createTestApp();
+  const submission = await app.fetch('/api/contact', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: 'https://picshrink.test' },
+    body: JSON.stringify({
+      name: 'Jane Doe',
+      email: 'jane@example.com',
+      subject: 'Bug',
+      message: 'The image compressor is not responding on my browser.',
+    }),
+  });
+  assert.equal(submission.status, 201);
+  const created = await submission.json() as { accepted: boolean; id: string };
+  assert.equal(created.accepted, true);
+
+  const invalid = await app.fetch('/api/contact', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'x', email: 'not-an-email', subject: 'Bug', message: 'short' }),
+  });
+  assert.equal(invalid.status, 400);
+
+  const unauthenticated = await app.fetch('/api/admin/messages');
+  assert.equal(unauthenticated.status, 401);
+
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const inbox = await app.fetch('/api/admin/messages', { headers: { Cookie: cookie } });
+  assert.equal(inbox.status, 200);
+  const data = await inbox.json() as { messages: Array<{ id: string; status: string; email: string }> };
+  assert.equal(data.messages.length, 1);
+  assert.equal(data.messages[0].id, created.id);
+  assert.equal(data.messages[0].status, 'unread');
+
+  const updated = await app.fetch('/api/admin/messages', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ id: created.id, status: 'read' }),
+  });
+  assert.equal(updated.status, 200);
+  const updatedBody = await updated.json() as { message: { status: string } };
+  assert.equal(updatedBody.message.status, 'read');
+});
+
 const loginRequest = (username: string, password: string) => ({
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
