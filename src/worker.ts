@@ -182,7 +182,7 @@ export class AdminData {
       return jsonResponse({ content: items }, 200);
     }
     if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
-    const body = await readJsonBody<Record<string, unknown>>(request);
+    const body = (await readJsonBody<Record<string, unknown>>(request)) ?? {};
     if (request.method === 'POST') {
       const title = typeof body?.title === 'string' ? body.title.trim() : '';
       const slug = slugify(typeof body?.slug === 'string' && body.slug.trim() ? body.slug : title);
