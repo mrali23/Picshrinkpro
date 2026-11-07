@@ -38,7 +38,7 @@ export function BlogPostPage() {
   if (!post && !managedPost) return <NotFoundPage />;
 
   if (!post && managedPost) {
-    const paragraphs = managedPost.body.split(/\\n\\s*\\n/).filter(Boolean);
+    const paragraphs = managedPost.body.split(/\n\s*\n/).filter(Boolean);
     const path = '/blog/' + managedPost.slug;
     const articleDate = new Date(managedPost.publishedAt ?? managedPost.updatedAt).toISOString();
     const managedSchema = {
