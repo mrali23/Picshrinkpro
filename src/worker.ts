@@ -257,8 +257,7 @@ export class AdminData {
       const destinationUrl = typeof body.destinationUrl === 'string' ? body.destinationUrl.trim() : '';
       const statusCode = [301,302,307,308].includes(Number(body.statusCode)) ? Number(body.statusCode) as ManagedRedirect['statusCode'] : 301;
       if (!sourcePath.startsWith('/') || sourcePath.startsWith('//') || sourcePath.length > 500 ||
-          !destinationUrl || destinationUrl.length > 1000 || destinationUrl.startsWith('//') ||
-          (destinationUrl.startsWith('http') && new URL(destinationUrl).origin !== new URL(request.url).origin)) {
+          !destinationUrl.startsWith('/') || destinationUrl.length > 1000 || destinationUrl.startsWith('//')) {
         return jsonResponse({ error: 'Use a local source path and a valid same-site destination.' }, 400);
       }
       const redirects = state.redirects ?? [];
