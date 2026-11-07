@@ -194,6 +194,31 @@ test('CMS supports draft creation, versioned editing, publishing, and public rea
 });
 
 
+
+test('CMS scheduled articles stay private until the authenticated publisher runs', async () => {
+  const app = createTestApp();
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const scheduledAt = Date.now() + 40;
+  const create = await app.fetch('/api/admin/content', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'Scheduled Release', slug: 'scheduled-release', excerpt: 'Later', body: 'Scheduled body', status: 'scheduled', scheduledAt }),
+  });
+  assert.equal(create.status, 201);
+  assert.equal((await app.fetch('/api/content/scheduled-release')).status, 404);
+
+  const unauthorized = await app.fetch('/api/internal/publish-scheduled', { method: 'POST' });
+  assert.equal(unauthorized.status, 401);
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const publish = await app.fetch('/api/internal/publish-scheduled', {
+    method: 'POST', headers: { Authorization: `Bearer ${TEST_SECRETS.SESSION_SECRET}` },
+  });
+  assert.equal(publish.status, 200);
+  assert.equal((await publish.json() as { published: number }).published, 1);
+  assert.equal((await app.fetch('/api/content/scheduled-release')).status, 200);
+});
+
 test('public homepage sections and sitemap expose only public configuration and published posts', async () => {
   const staticSitemap = '<?xml version="1.0" encoding="UTF-8"?>\\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://picshrink.test/</loc></url></urlset>';
   const app = createTestApp(TEST_SECRETS, { '/sitemap.xml': staticSitemap });
