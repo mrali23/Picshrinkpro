@@ -51,11 +51,13 @@ function RouteTracker() {
 
 /** Routes and layout without a router, so the same tree is used by the browser and by the build-time prerender. */
 export function AppRoutes() {
+  const location = useLocation();
+  const isAdminRoute = location.pathname.startsWith('/admin');
   return (
     <>
         <RouteTracker />
         <div className="flex flex-col min-h-screen bg-slate-50 text-slate-800">
-          <Navbar />
+          {!isAdminRoute && <Navbar />
           <main className="flex-1">
             <Suspense fallback={<div role="status" className="mx-auto max-w-5xl px-4 py-16 text-center text-slate-500">Loading page…</div>}>
             <Routes>
@@ -83,9 +85,9 @@ export function AppRoutes() {
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
             </Suspense>
-            <RelatedLinks />
+            {!isAdminRoute && <RelatedLinks />}
           </main>
-          <Footer />
+          {!isAdminRoute && <Footer />}
         </div>
     </>
   );
