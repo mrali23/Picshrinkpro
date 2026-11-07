@@ -530,7 +530,7 @@ export class AdminData {
       id: `act_${now.toString(36)}_${item.id}`, actor: 'system', action: 'publish_scheduled', resource: 'content', resourceId: item.id, createdAt: now,
     }))].slice(-2000);
     await this.storage.put('admin-state', state);
-    return jsonResponse({ published: due.length, ids: due.map((item) => item.id), publishedSlugs: (state.content ?? []).filter((item) => item.status === 'published').map((item) => item.slug), scheduledSlugs: (state.content ?? []).filter((item) => item.status === 'scheduled').map((item) => item.slug) }, 200);
+    return jsonResponse({ published: due.length, ids: due.map((item) => item.id) }, 200);
   }
 
   private async handleSitemapContent(request: Request): Promise<Response> {
