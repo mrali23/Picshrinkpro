@@ -1079,7 +1079,7 @@ const worker = {
     if (url.pathname === '/sitemap.xml' && request.method === 'GET') {
       const staticSitemap = await env.ASSETS.fetch(request);
       const staticXml = staticSitemap.ok ? await staticSitemap.text() : '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>';
-      const contentResponse = await adminApi(new Request(new URL('/api/sitemap-content', url), { method: 'GET' }));
+      const contentResponse = await adminApi(new Request(new URL('/api/sitemap-content', url), { method: 'GET' }), env);
       const payload = contentResponse.ok ? await contentResponse.json() as { content?: Array<{ slug: string; updatedAt: number }> } : { content: [] };
       const entries = (payload.content ?? []).map((item) => {
         const loc = `${url.origin}/blog/${encodeURIComponent(item.slug)}`;
