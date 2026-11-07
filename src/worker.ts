@@ -529,7 +529,7 @@ export class AdminData {
       const item = raw as Record<string, unknown>;
       const label = typeof item.label === 'string' ? item.label.trim().slice(0,40) : '';
       const url = typeof item.url === 'string' ? item.url.trim() : '';
-      if (!label || !url.startsWith('/') || url.startsWith('//') || url.length > 300 || /[\\r\\n]/.test(url)) {
+      if (!label || !url.startsWith('/') || url.startsWith('//') || url.length > 300 || /[\r\n]/.test(url)) {
         return jsonResponse({ error: 'Each link needs a label and a same-site path beginning with one slash.' }, 400);
       }
       links.push({ id: typeof item.id === 'string' ? item.id.slice(0,80) : `nav_${index}`, label, url, visible: item.visible !== false, position: index });
