@@ -36,6 +36,7 @@ interface ManagedContent {
   metaDescription: string; canonicalUrl: string; ogImageUrl: string;
   createdAt: number; updatedAt: number; publishedAt?: number; version: number;
 }
+interface ContentRevision { id: string; contentId: string; version: number; title: string; slug: string; excerpt: string; body: string; status: ManagedContent['status']; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; createdAt: number; actor: string; }
 interface AdminActivity {
   id: string; actor: string; action: string; resource: string;
   resourceId?: string; createdAt: number;
@@ -62,6 +63,7 @@ interface AdminState {
   events: AnalyticsEvent[];
   messages?: ContactMessage[];
   content?: ManagedContent[];
+  contentRevisions?: ContentRevision[];
   activity?: AdminActivity[];
   redirects?: ManagedRedirect[];
   homepageSections?: HomepageSection[];
@@ -154,6 +156,7 @@ export class AdminData {
       return this.handleAnalytics(request);
     }
 
+    if (/^\/api\/admin\/content\/[^/]+\/revisions(?:\/[^/]+\/restore)?$/.test(path)) return this.handleContentRevisions(request);
     if (path === '/api/admin/content' || path.startsWith('/api/admin/content/')) {
       return this.handleContent(request);
     }
@@ -177,6 +180,47 @@ export class AdminData {
     activity.unshift({ id: `act_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, actor, action, resource, resourceId, createdAt: Date.now() });
     state.activity = activity.slice(0, 2000);
     await this.storage.put('admin-state', state);
+  }
+
+  private async handleContentRevisions(request: Request): Promise<Response> {
+    const actor = await this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (actor.role === 'viewer') return jsonResponse({ error: 'Forbidden' }, 403);
+    const parts = new URL(request.url).pathname.split('/').filter(Boolean);
+    const contentId = decodeURIComponent(parts[3] ?? '');
+    const revisionId = parts[5] ? decodeURIComponent(parts[5]) : '';
+    const state = await this.getState();
+    const current = (state.content ?? []).find((item) => item.id === contentId);
+    if (!current) return jsonResponse({ error: 'Content not found.' }, 404);
+    if (request.method === 'GET' && !revisionId) {
+      const revisions = (state.contentRevisions ?? []).filter((item) => item.contentId === contentId)
+        .sort((a,b) => b.createdAt-a.createdAt)
+        .map(({id,contentId,version,title,slug,status,createdAt,actor}) => ({id,contentId,version,title,slug,status,createdAt,actor}));
+      return jsonResponse({ revisions }, 200);
+    }
+    if (request.method !== 'POST' || !revisionId || !parts.includes('restore') || !isSameOrigin(request)) {
+      return jsonResponse({ error: 'Method not allowed' }, 405);
+    }
+    const body = (await readJsonBody<{ version?: unknown }>(request)) ?? {};
+    if (typeof body.version === 'number' && body.version !== current.version) {
+      return jsonResponse({ error: 'This article changed in another session. Reload before restoring.', current }, 409);
+    }
+    const revision = (state.contentRevisions ?? []).find((item) => item.id === revisionId && item.contentId === contentId);
+    if (!revision) return jsonResponse({ error: 'Revision not found.' }, 404);
+    const now = Date.now();
+    const currentRevision: ContentRevision = { ...current, id: `rev_${now.toString(36)}_${Math.random().toString(36).slice(2,7)}`, contentId, createdAt: now, actor: actor.username };
+    state.contentRevisions = [...(state.contentRevisions ?? []), currentRevision].slice(-2000);
+    const restored: ManagedContent = {
+      ...current, title: revision.title, slug: revision.slug, excerpt: revision.excerpt, body: revision.body,
+      status: 'draft', scheduledAt: undefined, publishedAt: undefined,
+      seoTitle: revision.seoTitle, metaDescription: revision.metaDescription,
+      canonicalUrl: revision.canonicalUrl, ogImageUrl: revision.ogImageUrl,
+      updatedAt: now, version: current.version + 1,
+    };
+    state.content = (state.content ?? []).map((item) => item.id === contentId ? restored : item);
+    await this.storage.put('admin-state', state);
+    await this.recordActivity(actor.username, 'restore_revision', 'content', contentId);
+    return jsonResponse({ content: restored }, 200);
   }
 
   private async handleContent(request: Request): Promise<Response> {
@@ -216,6 +260,8 @@ export class AdminData {
         createdAt: now, updatedAt: now, publishedAt: status === 'published' ? now : undefined, version: 1,
       };
       state.content = [item, ...items];
+      const initialRevision: ContentRevision = { ...item, id: `rev_${now.toString(36)}_initial`, contentId: item.id, createdAt: now, actor: actor.username };
+      state.contentRevisions = [...(state.contentRevisions ?? []), initialRevision].slice(-2000);
       await this.storage.put('admin-state', state);
       await this.recordActivity(actor.username, 'create', 'content', item.id);
       return jsonResponse({ content: item }, 201);
@@ -248,6 +294,8 @@ export class AdminData {
         updatedAt: Date.now(), publishedAt: status === 'published' ? (current.publishedAt ?? Date.now()) : undefined,
         version: current.version + 1,
       };
+      const revision: ContentRevision = { ...current, id: `rev_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`, contentId: current.id, createdAt: Date.now(), actor: actor.username };
+      state.contentRevisions = [...(state.contentRevisions ?? []), revision].slice(-2000);
       items[index] = updated;
       state.content = items;
       await this.storage.put('admin-state', state);
@@ -814,6 +862,7 @@ export class AdminData {
     if (state) {
       if (!Array.isArray(state.messages)) state.messages = [];
       if (!Array.isArray(state.content)) state.content = [];
+      if (!Array.isArray(state.contentRevisions)) state.contentRevisions = [];
       if (!Array.isArray(state.activity)) state.activity = [];
       if (!Array.isArray(state.redirects)) state.redirects = [];
       if (!Array.isArray(state.homepageSections) || state.homepageSections.length === 0) state.homepageSections = defaultHomepageSections();
@@ -828,7 +877,7 @@ export class AdminData {
     const freshState: AdminState = {
       settings: { ...DEFAULT_SITE_SETTINGS },
       events: [],
-      messages: [], content: [], activity: [], redirects: [],
+      messages: [], content: [], contentRevisions: [], activity: [], redirects: [],
       homepageSections: defaultHomepageSections(), backups: [], media: [], revokedSessions: [], users: [], loginAttempts: [],
     };
     await this.storage.put('admin-state', freshState);
