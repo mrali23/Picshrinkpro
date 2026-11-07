@@ -17,6 +17,7 @@ type AdminTab = 'overview' | 'content' | 'media' | 'inbox' | 'site' | 'users' | 
 interface AdminUser { id: string; username: string; email: string; role: AdminRole; active: boolean; createdAt: number; lastLoginAt?: number; }
 interface ManagedRedirect { id: string; sourcePath: string; destinationUrl: string; statusCode: 301 | 302 | 307 | 308; active: boolean; createdAt: number; }
 interface ManagedSection { id: string; key: string; title: string; content: string; visible: boolean; position: number; updatedAt: number; }
+interface ManagedNavigationLink { id: string; label: string; url: string; visible: boolean; position: number; }
 interface ActivityEntry { id: string; actor: string; action: string; resource: string; resourceId?: string; createdAt: number; }
 interface BackupEntry { id: string; label: string; createdAt: number; }
 interface MediaAsset { id: string; key: string; name: string; type: string; size: number; altText?: string; folder?: string; createdAt: number; }
@@ -60,6 +61,8 @@ function AdminDashboardContent() {
   const [contentRevisions, setContentRevisions] = useState<ManagedRevision[]>([]);
   const [redirects, setRedirects] = useState<ManagedRedirect[]>([]);
   const [sections, setSections] = useState<ManagedSection[]>([]);
+  const [navigationLinks, setNavigationLinks] = useState<ManagedNavigationLink[]>([]);
+  const [navigationDraft, setNavigationDraft] = useState({ label: '', url: '/' });
   const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
@@ -74,19 +77,20 @@ function AdminDashboardContent() {
   const [busy, setBusy] = useState(false);
 
   const loadAdminData = useCallback(async (role: AdminRole = userRole) => {
-    const [nextSettings, nextSummary, contentResult, redirectResult, sectionResult, inbox, activity, backup, users] = await Promise.all([
+    const [nextSettings, nextSummary, contentResult, redirectResult, sectionResult, navigationResult, inbox, activity, backup, users] = await Promise.all([
       requestJson<SiteSettings>('/api/admin/settings'),
       requestJson<AnalyticsSummary>('/api/admin/analytics'),
       requestJson<{ content: ManagedContent[] }>('/api/admin/content'),
       requestJson<{ redirects: ManagedRedirect[] }>('/api/admin/redirects'),
       requestJson<{ sections: ManagedSection[] }>('/api/admin/homepage-sections'),
+      requestJson<{ links: ManagedNavigationLink[] }>('/api/admin/navigation'),
       role === 'admin' ? requestJson<{ messages: ContactMessage[] }>('/api/admin/messages') : Promise.resolve({ messages: [] as ContactMessage[] }),
       role === 'admin' ? requestJson<{ activity: ActivityEntry[] }>('/api/admin/activity') : Promise.resolve({ activity: [] as ActivityEntry[] }),
       role === 'admin' ? requestJson<{ backups: BackupEntry[] }>('/api/admin/backups') : Promise.resolve({ backups: [] as BackupEntry[] }),
       role === 'admin' ? requestJson<{ users: AdminUser[] }>('/api/admin/users') : Promise.resolve({ users: [] as AdminUser[] }),
     ]);
     setSettings(nextSettings); setSummary(nextSummary); setContentItems(contentResult.content);
-    setRedirects(redirectResult.redirects); setSections(sectionResult.sections);
+    setRedirects(redirectResult.redirects); setSections(sectionResult.sections); setNavigationLinks(navigationResult.links);
     setMessages(inbox.messages); setActivityEntries(activity.activity); setBackups(backup.backups); setAdminUsers(users.users);
   }, [userRole]);
 
@@ -355,6 +359,27 @@ function AdminDashboardContent() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Redirect could not be deleted.'); }
   };
 
+  const addNavigationLink = () => {
+    const label = navigationDraft.label.trim();
+    const url = navigationDraft.url.trim();
+    if (!label || !url.startsWith('/') || url.startsWith('//')) { setError('Enter a label and a local path such as /blog.'); return; }
+    if (navigationLinks.length >= 20) { setError('The navigation menu supports up to 20 links.'); return; }
+    setNavigationLinks((items) => [...items, { id: 'nav_' + Math.random().toString(36).slice(2,9), label, url, visible: true, position: items.length }]);
+    setNavigationDraft({ label: '', url: '/' });
+    setError('');
+  };
+
+  const saveNavigation = async () => {
+    setBusy(true); setError('');
+    try {
+      const result = await requestJson<{ links: ManagedNavigationLink[] }>('/api/admin/navigation', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ links: navigationLinks }),
+      });
+      setNavigationLinks(result.links); setNotice('Navigation menu saved and published.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Navigation menu could not be saved.'); }
+    finally { setBusy(false); }
+  };
+
   const saveSections = async () => {
     setBusy(true); setError('');
     try {
@@ -584,6 +609,16 @@ function AdminDashboardContent() {
                   <div className="flex gap-2"><select value={redirectDraft.statusCode} onChange={(e) => setRedirectDraft((v) => ({...v,statusCode:e.target.value}))} className="min-w-0 flex-1 rounded-xl border border-slate-300 px-2 py-2 text-sm"><option>301</option><option>302</option><option>307</option><option>308</option></select><button className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Add</button></div>
                 </form>
                 <div className="space-y-2">{redirects.length ? redirects.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 text-xs"><span className="min-w-0 break-all text-slate-700">{item.sourcePath} <span className="text-slate-400">→</span> {item.destinationUrl} <b className="ml-1">{item.statusCode}</b></span><button onClick={() => deleteRedirect(item.id)} className="shrink-0 text-rose-600">Delete</button></div>) : <p className="text-sm text-slate-400">No redirects configured.</p>}</div>
+              </div>
+              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div><h3 className="font-bold text-slate-900">Navigation menu</h3><p className="mt-1 text-xs text-slate-500">Manage the public header links. Only same-site paths are allowed.</p></div>
+                <form onSubmit={(event) => { event.preventDefault(); addNavigationLink(); }} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                  <input value={navigationDraft.label} onChange={(e) => setNavigationDraft((v) => ({...v,label:e.target.value}))} placeholder="Link label" maxLength={40} className="rounded-lg border border-slate-200 px-3 py-2 text-sm"/>
+                  <input value={navigationDraft.url} onChange={(e) => setNavigationDraft((v) => ({...v,url:e.target.value}))} placeholder="/blog" className="rounded-lg border border-slate-200 px-3 py-2 text-sm"/>
+                  <button className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Add link</button>
+                </form>
+                <div className="space-y-2">{navigationLinks.map((link,index) => <div key={link.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2.5"><input value={link.label} onChange={(e) => setNavigationLinks((items) => items.map((v,i) => i===index ? {...v,label:e.target.value} : v))} className="min-w-0 flex-1 rounded-md border border-slate-200 px-2 py-1.5 text-xs"/><input value={link.url} onChange={(e) => setNavigationLinks((items) => items.map((v,i) => i===index ? {...v,url:e.target.value} : v))} className="min-w-0 flex-1 rounded-md border border-slate-200 px-2 py-1.5 text-xs"/><label className="flex items-center gap-1 text-xs text-slate-600"><input type="checkbox" checked={link.visible} onChange={(e) => setNavigationLinks((items) => items.map((v,i) => i===index ? {...v,visible:e.target.checked} : v))}/>Show</label><button onClick={() => setNavigationLinks((items) => items.filter((_,i) => i!==index).map((v,i) => ({...v,position:i})))} className="text-xs font-semibold text-rose-600">Remove</button></div>)}</div>
+                <button onClick={saveNavigation} disabled={busy} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save navigation menu'}</button>
               </div>
               <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div><h3 className="font-bold text-slate-900">Homepage sections</h3><p className="mt-1 text-xs text-slate-500">Configure section labels and content records. Public homepage components must be wired to these records before these settings change their visible layout.</p></div>
