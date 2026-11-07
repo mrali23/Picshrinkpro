@@ -242,13 +242,13 @@ export class AdminData {
       items[index] = updated;
       state.content = items;
       await this.storage.put('admin-state', state);
-      await this.recordActivity(actor, 'update', 'content', id);
+      await this.recordActivity(actor.username, 'update', 'content', id);
       return jsonResponse({ content: updated }, 200);
     }
     if (request.method === 'DELETE') {
       state.content = items.filter((item) => item.id !== id);
       await this.storage.put('admin-state', state);
-      await this.recordActivity(actor, 'delete', 'content', id);
+      await this.recordActivity(actor.username, 'delete', 'content', id);
       return jsonResponse({ deleted: true }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -283,11 +283,11 @@ export class AdminData {
       const id = `med_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
       const extension = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif', 'image/gif': 'gif' } as Record<string,string>)[file.type];
       const key = `uploads/${id}.${extension}`;
-      await this.mediaBucket.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { uploadedBy: actor } });
+      await this.mediaBucket.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { uploadedBy: actor.username } });
       const asset: MediaAsset = { id, key, name: file.name.slice(0,200), type: file.type, size: file.size, createdAt: Date.now() };
       state.media = [asset, ...(state.media ?? [])].slice(0, 1000);
       await this.storage.put('admin-state', state);
-      await this.recordActivity(actor, 'upload', 'media', id);
+      await this.recordActivity(actor.username, 'upload', 'media', id);
       return jsonResponse({ media: asset }, 201);
     }
     if (request.method === 'GET' && id) {
@@ -303,7 +303,7 @@ export class AdminData {
       await this.mediaBucket.delete(asset.key);
       state.media = (state.media ?? []).filter((item) => item.id !== id);
       await this.storage.put('admin-state', state);
-      await this.recordActivity(actor, 'delete', 'media', id);
+      await this.recordActivity(actor.username, 'delete', 'media', id);
       return jsonResponse({ deleted: true }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -346,7 +346,7 @@ export class AdminData {
     if (request.method === 'PATCH') {
       const role = body.role === 'admin' || body.role === 'editor' || body.role === 'viewer' ? body.role : target.role;
       const active = typeof body.active === 'boolean' ? body.active : target.active;
-      if (target.id === actor.username && (!active || role !== 'admin')) return jsonResponse({ error: 'You cannot deactivate or demote your own account.' }, 400);
+      if (target.username === actor.username && (!active || role !== 'admin')) return jsonResponse({ error: 'You cannot deactivate or demote your own account.' }, 400);
       if (target.role === 'admin' && (role !== 'admin' || !active) && users.filter((user) => user.role === 'admin' && user.active).length <= 1) {
         return jsonResponse({ error: 'At least one active administrator must remain.' }, 400);
       }
@@ -402,13 +402,13 @@ export class AdminData {
       const item: ManagedRedirect = { id: `rdr_${Date.now().toString(36)}`, sourcePath, destinationUrl, statusCode, active: true, createdAt: Date.now() };
       state.redirects = [item, ...redirects];
       await this.storage.put('admin-state', state);
-      await this.recordActivity(actor, 'create', 'redirect', item.id);
+      await this.recordActivity(actor.username, 'create', 'redirect', item.id);
       return jsonResponse({ redirect: item }, 201);
     }
     if (request.method === 'DELETE') {
       state.redirects = (state.redirects ?? []).filter((item) => item.id !== id);
       await this.storage.put('admin-state', state);
-      await this.recordActivity(actor, 'delete', 'redirect', id);
+      await this.recordActivity(actor.username, 'delete', 'redirect', id);
       return jsonResponse({ deleted: true }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -435,7 +435,7 @@ export class AdminData {
     });
     state.homepageSections = sections;
     await this.storage.put('admin-state', state);
-    await this.recordActivity(actor, 'update', 'homepage_sections');
+    await this.recordActivity(actor.username, 'update', 'homepage_sections');
     return jsonResponse({ sections }, 200);
   }
 
@@ -454,7 +454,7 @@ export class AdminData {
       const backup = { id: `bkp_${Date.now().toString(36)}`, label: typeof body?.label === 'string' ? body.label.slice(0,100) : 'Manual backup', createdAt: Date.now(), snapshot };
       state.backups = [backup, ...(state.backups ?? [])].slice(0, 20);
       await this.storage.put('admin-state', state);
-      await this.recordActivity(actor, 'create', 'backup', backup.id);
+      await this.recordActivity(actor.username, 'create', 'backup', backup.id);
       return jsonResponse({ backup: { id: backup.id, label: backup.label, createdAt: backup.createdAt } }, 201);
     }
     if (request.method === 'POST' && url.pathname.endsWith('/restore')) {
@@ -464,7 +464,7 @@ export class AdminData {
       if (!backup) return jsonResponse({ error: 'Backup not found.' }, 404);
       const restored = { ...backup.snapshot, backups: state.backups };
       await this.storage.put('admin-state', restored);
-      await this.recordActivity(actor, 'restore', 'backup', id);
+      await this.recordActivity(actor.username, 'restore', 'backup', id);
       return jsonResponse({ restored: true }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
