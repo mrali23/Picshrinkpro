@@ -317,7 +317,7 @@ export class AdminData {
     const id = url.pathname.startsWith('/api/admin/redirects/') ? decodeURIComponent(url.pathname.slice('/api/admin/redirects/'.length)) : '';
     if (request.method === 'GET') return jsonResponse({ redirects: state.redirects ?? [] }, 200);
     if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
-    const body = await readJsonBody<Record<string, unknown>>(request);
+    const body = (await readJsonBody<Record<string, unknown>>(request)) ?? {};
     if (request.method === 'POST') {
       const sourcePath = typeof body.sourcePath === 'string' ? body.sourcePath.trim() : '';
       const destinationUrl = typeof body.destinationUrl === 'string' ? body.destinationUrl.trim() : '';
