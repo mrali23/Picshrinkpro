@@ -33,7 +33,7 @@ interface ContactMessage {
 interface ManagedContent {
   id: string; title: string; slug: string; excerpt: string; body: string;
   status: 'draft' | 'published' | 'scheduled' | 'archived'; scheduledAt?: number; seoTitle: string;
-  metaDescription: string; canonicalUrl: string; ogImageUrl: string;
+  metaDescription: string; canonicalUrl: string; ogImageUrl: string; includeInSitemap: boolean;
   createdAt: number; updatedAt: number; publishedAt?: number; version: number;
 }
 interface ContentRevision { id: string; contentId: string; version: number; title: string; slug: string; excerpt: string; body: string; status: ManagedContent['status']; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; createdAt: number; actor: string; }
@@ -256,6 +256,7 @@ export class AdminData {
         status, scheduledAt: status === 'scheduled' ? scheduledAt : undefined, seoTitle: typeof body.seoTitle === 'string' ? body.seoTitle.slice(0, 180) : title,
         metaDescription: typeof body.metaDescription === 'string' ? body.metaDescription.slice(0, 300) : excerpt,
         canonicalUrl: typeof body.canonicalUrl === 'string' ? body.canonicalUrl.slice(0, 500) : '',
+        includeInSitemap: body.includeInSitemap !== false,
         ogImageUrl: typeof body.ogImageUrl === 'string' ? body.ogImageUrl.slice(0, 1000) : '',
         createdAt: now, updatedAt: now, publishedAt: status === 'published' ? now : undefined, version: 1,
       };
@@ -290,6 +291,7 @@ export class AdminData {
         seoTitle: typeof body.seoTitle === 'string' ? body.seoTitle.slice(0,180) : current.seoTitle,
         metaDescription: typeof body.metaDescription === 'string' ? body.metaDescription.slice(0,300) : current.metaDescription,
         canonicalUrl: body.canonicalUrl === undefined ? current.canonicalUrl : sanitizeCanonicalUrl(body.canonicalUrl),
+        includeInSitemap: typeof body.includeInSitemap === 'boolean' ? body.includeInSitemap : current.includeInSitemap !== false,
         ogImageUrl: typeof body.ogImageUrl === 'string' ? body.ogImageUrl.slice(0,1000) : current.ogImageUrl,
         updatedAt: Date.now(), publishedAt: status === 'published' ? (current.publishedAt ?? Date.now()) : undefined,
         version: current.version + 1,
@@ -585,7 +587,7 @@ export class AdminData {
     if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
     const state = await this.getState();
     const content = (state.content ?? [])
-      .filter((item) => item.status === 'published')
+      .filter((item) => item.status === 'published' && item.includeInSitemap !== false)
       .map((item) => ({ slug: item.slug, updatedAt: item.updatedAt }));
     return jsonResponse({ content }, 200);
   }
