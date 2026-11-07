@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Activity, BarChart3, Check, Eye, EyeOff, LogOut, Mail, Save, Settings, ShieldCheck, Users } from 'lucide-react';
+import { Activity, BarChart3, Check, Eye, EyeOff, FileText, LogOut, Mail, Save, Settings, ShieldCheck, Users } from 'lucide-react';
 import { analytics, type AnalyticsEvent } from '../../utils/analytics';
 import { DEFAULT_SITE_SETTINGS, type SiteSettings } from '../../utils/siteSettings';
 
@@ -12,7 +12,8 @@ interface AnalyticsSummary {
   recentEvents: AnalyticsEvent[];
 }
 
-type AdminTab = 'overview' | 'inbox' | 'settings';
+type AdminTab = 'overview' | 'content' | 'inbox' | 'settings';
+interface ManagedContent { id: string; title: string; slug: string; excerpt: string; body: string; status: 'draft' | 'published' | 'archived'; seoTitle: string; metaDescription: string; canonicalUrl: string; ogImageUrl: string; createdAt: number; updatedAt: number; publishedAt?: number; version: number; }
 
 interface ContactMessage {
   id: string; name: string; email: string; subject: string; message: string;
@@ -44,19 +45,24 @@ function AdminDashboardContent() {
   const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
+  const [contentItems, setContentItems] = useState<ManagedContent[]>([]);
+  const [editingContentId, setEditingContentId] = useState<string | null>(null);
+  const [contentDraft, setContentDraft] = useState({ title: '', slug: '', excerpt: '', body: '', status: 'draft' as 'draft' | 'published', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '' });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
 
   const loadAdminData = useCallback(async () => {
-    const [nextSettings, nextSummary, inbox] = await Promise.all([
+    const [nextSettings, nextSummary, inbox, contentResult] = await Promise.all([
       requestJson<SiteSettings>('/api/admin/settings'),
       requestJson<AnalyticsSummary>('/api/admin/analytics'),
       requestJson<{ messages: ContactMessage[] }>('/api/admin/messages'),
+      requestJson<{ content: ManagedContent[] }>('/api/admin/content'),
     ]);
     setSettings(nextSettings);
     setSummary(nextSummary);
     setMessages(inbox.messages);
+    setContentItems(contentResult.content);
   }, []);
 
   useEffect(() => {
@@ -156,6 +162,46 @@ function AdminDashboardContent() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Message could not be updated.');
     }
+  };
+
+
+  const resetContentDraft = () => {
+    setEditingContentId(null);
+    setContentDraft({ title: '', slug: '', excerpt: '', body: '', status: 'draft', seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '' });
+  };
+
+  const saveContent = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const existing = contentItems.find((item) => item.id === editingContentId);
+      const result = await requestJson<{ content: ManagedContent }>(editingContentId ? '/api/admin/content/' + encodeURIComponent(editingContentId) : '/api/admin/content', {
+        method: editingContentId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...contentDraft, version: existing?.version }),
+      });
+      setContentItems((items) => editingContentId ? items.map((item) => item.id === result.content.id ? result.content : item) : [result.content, ...items]);
+      resetContentDraft();
+      setNotice(result.content.status === 'published' ? 'Article saved and marked published in the CMS.' : 'Draft saved.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Content could not be saved.');
+    } finally { setBusy(false); }
+  };
+
+  const editContent = (item: ManagedContent) => {
+    setEditingContentId(item.id);
+    setContentDraft({ title: item.title, slug: item.slug, excerpt: item.excerpt, body: item.body, status: item.status === 'published' ? 'published' : 'draft', seoTitle: item.seoTitle, metaDescription: item.metaDescription, canonicalUrl: item.canonicalUrl, ogImageUrl: item.ogImageUrl });
+    setError(''); setNotice('');
+  };
+
+  const deleteContent = async (item: ManagedContent) => {
+    if (!window.confirm('Permanently delete "' + item.title + '" from the CMS?')) return;
+    try {
+      await requestJson('/api/admin/content/' + encodeURIComponent(item.id), { method: 'DELETE' });
+      setContentItems((items) => items.filter((entry) => entry.id !== item.id));
+      if (editingContentId === item.id) resetContentDraft();
+      setNotice('Content deleted.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Content could not be deleted.'); }
   };
 
   const updateSettings = (patch: Partial<SiteSettings>) => {
@@ -272,6 +318,31 @@ function AdminDashboardContent() {
             </section>
             <p className="mt-4 text-xs text-slate-500">Live metrics refresh every 10 seconds. Active visitors are anonymous browser IDs seen within the last 5 minutes. GA4 visitor and revenue reports are available in your Google Analytics account.</p>
           </>
+        ) : tab === 'content' ? (
+          <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-slate-900">Content studio</h2><p className="mt-1 text-sm text-slate-500">Create and manage CMS entries with version-aware editing and SEO metadata.</p></div><button onClick={resetContentDraft} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">New article</button></div>
+              {contentItems.length ? contentItems.map((item) => (
+                <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><h3 className="truncate font-bold text-slate-900">{item.title}</h3><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">{item.status}</span></div><p className="mt-1 text-xs text-slate-500">/blog/{item.slug} · v{item.version}</p></div><time className="shrink-0 text-xs text-slate-400">{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(item.updatedAt)}</time></div>
+                  <p className="mt-3 line-clamp-2 text-sm text-slate-600">{item.excerpt || 'No excerpt provided.'}</p>
+                  <div className="mt-3 flex gap-2"><button onClick={() => editContent(item)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button><button onClick={() => deleteContent(item)} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button></div>
+                </article>
+              )) : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center"><FileText className="mx-auto text-slate-400" size={28}/><h3 className="mt-3 font-semibold text-slate-800">No CMS articles yet</h3><p className="mt-1 text-sm text-slate-500">Create a draft to start building your managed content library.</p></div>}
+            </div>
+            <form onSubmit={saveContent} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div><h2 className="text-lg font-bold text-slate-900">{editingContentId ? 'Edit article' : 'Create article'}</h2><p className="mt-1 text-xs text-slate-500">Content is stored safely as text. HTML and scripts are not executed.</p></div>
+              <label className="block text-sm font-semibold text-slate-700">Title<input required minLength={3} maxLength={180} value={contentDraft.title} onChange={(e) => setContentDraft((v) => ({...v,title:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label>
+              <label className="block text-sm font-semibold text-slate-700">URL slug<input required value={contentDraft.slug} onChange={(e) => setContentDraft((v) => ({...v,slug:e.target.value}))} placeholder="article-url-slug" className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label>
+              <label className="block text-sm font-semibold text-slate-700">Excerpt<textarea rows={2} maxLength={500} value={contentDraft.excerpt} onChange={(e) => setContentDraft((v) => ({...v,excerpt:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label>
+              <label className="block text-sm font-semibold text-slate-700">Article body<textarea required rows={9} maxLength={100000} value={contentDraft.body} onChange={(e) => setContentDraft((v) => ({...v,body:e.target.value}))} placeholder="Write article content. Separate paragraphs with blank lines." className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label>
+              <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-semibold text-slate-700">SEO title<input maxLength={180} value={contentDraft.seoTitle} onChange={(e) => setContentDraft((v) => ({...v,seoTitle:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label><label className="block text-sm font-semibold text-slate-700">Meta description<input maxLength={300} value={contentDraft.metaDescription} onChange={(e) => setContentDraft((v) => ({...v,metaDescription:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label></div>
+              <label className="block text-sm font-semibold text-slate-700">Canonical URL<input value={contentDraft.canonicalUrl} onChange={(e) => setContentDraft((v) => ({...v,canonicalUrl:e.target.value}))} placeholder="Optional absolute URL" className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label>
+              <label className="block text-sm font-semibold text-slate-700">Open Graph image URL<input value={contentDraft.ogImageUrl} onChange={(e) => setContentDraft((v) => ({...v,ogImageUrl:e.target.value}))} placeholder="Optional image URL" className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label>
+              <label className="block text-sm font-semibold text-slate-700">Publication status<select value={contentDraft.status} onChange={(e) => setContentDraft((v) => ({...v,status:e.target.value as 'draft'|'published'}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"><option value="draft">Draft</option><option value="published">Published</option></select></label>
+              <div className="flex flex-wrap gap-2"><button disabled={busy} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save article'}</button><button type="button" onClick={resetContentDraft} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600">Clear</button></div>
+            </form>
+          </section>
         ) : tab === 'inbox' ? (
           <section className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
