@@ -64,6 +64,7 @@ interface AdminState {
   homepageSections?: HomepageSection[];
   backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups'> }>;
   media?: MediaAsset[];
+  revokedSessions?: string[];
 }
 
 interface StorageLike {
@@ -170,7 +171,7 @@ export class AdminData {
   }
 
   private async handleContent(request: Request): Promise<Response> {
-    const actor = this.getSessionUser(request);
+    const actor = await this.getSessionUser(request);
     if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
     const state = await this.getState();
     const url = new URL(request.url);
@@ -491,6 +492,14 @@ export class AdminData {
   private async handleLogout(request: Request): Promise<Response> {
     if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
     if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+    const cookieValue = request.headers.get('Cookie') ?? '';
+    const match = cookieValue.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
+    if (match) {
+      const state = await this.getState();
+      const tokenHash = createHash('sha256').update(match[1]).digest('hex');
+      state.revokedSessions = [...(state.revokedSessions ?? []), tokenHash].slice(-2000);
+      await this.storage.put('admin-state', state);
+    }
     return new Response(JSON.stringify({ authenticated: false }), {
       status: 200,
       headers: {
@@ -660,19 +669,20 @@ export class AdminData {
       if (!Array.isArray(state.homepageSections)) state.homepageSections = [];
       if (!Array.isArray(state.backups)) state.backups = [];
       if (!Array.isArray(state.media)) state.media = [];
+      if (!Array.isArray(state.revokedSessions)) state.revokedSessions = [];
       return state;
     }
 
     const freshState: AdminState = {
       settings: { ...DEFAULT_SITE_SETTINGS },
       events: [],
-      messages: [], content: [], activity: [], redirects: [], homepageSections: [], backups: [], media: [],
+      messages: [], content: [], activity: [], redirects: [], homepageSections: [], backups: [], media: [], revokedSessions: [],
     };
     await this.storage.put('admin-state', freshState);
     return freshState;
   }
 
-  private getSessionUser(request: Request): string | undefined {
+  private async getSessionUser(request: Request): Promise<string | undefined> {
     const secret = this.secrets.SESSION_SECRET;
     if (!this.isLoginConfigured() || !secret) return undefined;
 
@@ -680,6 +690,9 @@ export class AdminData {
     const match = cookieValue.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
     if (!match) return undefined;
 
+    const state = await this.getState();
+    const tokenHash = createHash('sha256').update(match[1]).digest('hex');
+    if ((state.revokedSessions ?? []).includes(tokenHash)) return undefined;
     return verifySessionToken(match[1], secret);
   }
 }
