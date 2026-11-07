@@ -1177,7 +1177,7 @@ const worker = {
         const result = await articleResponse.json() as { content: PublicManagedArticle };
         const shellResponse = await env.ASSETS.fetch(new Request(new URL('/', url)));
         const shell = shellResponse.ok ? await shellResponse.text() : '';
-        const stylesheetLinks = [...shell.matchAll(/<link\\b[^>]*rel=[\"']stylesheet[\"'][^>]*>/gi)].map((match) => match[0]).join('\\n');
+        const stylesheetLinks = [...shell.matchAll(/<link\b[^>]*rel=[\"']stylesheet[\"'][^>]*>/gi)].map((match) => match[0]).join('\n');
         response = renderManagedArticleHtml(result.content, url, stylesheetLinks);
       } else {
         const redirectResponse = await adminApi(new Request(new URL(`/api/redirect/resolve?path=${encodeURIComponent(url.pathname)}`, url), { method: 'GET' }), env);
