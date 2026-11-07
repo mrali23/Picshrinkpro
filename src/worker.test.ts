@@ -24,9 +24,15 @@ const TEST_SECRETS = {
   SESSION_SECRET: 'test-session-secret-with-more-than-thirty-two-characters',
 };
 
-function createTestApp(secrets: Record<string, string> = TEST_SECRETS, assets: Record<string, string> = {}) {
+interface TestMediaBucket {
+  put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string,string> }): Promise<unknown>;
+  get(key: string): Promise<{ body: ReadableStream | null; httpMetadata?: { contentType?: string }; size?: number } | null>;
+  delete(key: string): Promise<void>;
+}
+
+function createTestApp(secrets: Record<string, string> = TEST_SECRETS, assets: Record<string, string> = {}, mediaBucket?: TestMediaBucket) {
   // Mirrors Cloudflare: Durable Objects are constructed as new AdminData(ctx, env)
-  const data = new AdminData({ storage: new MemoryStorage() }, secrets);
+  const data = new AdminData({ storage: new MemoryStorage() }, { ...secrets, MEDIA: mediaBucket });
   const stub = { fetch: (request: Request) => data.fetch(request) };
   const env = {
     ASSETS: {
@@ -36,6 +42,7 @@ function createTestApp(secrets: Record<string, string> = TEST_SECRETS, assets: R
       },
     },
     ADMIN_DATA: { idFromName: () => 'global', get: () => stub },
+    MEDIA: mediaBucket,
     ...secrets,
   };
   return {
@@ -354,6 +361,59 @@ test('activity log and backup snapshots are available to authenticated administr
   assert.equal((await backups.json() as { backups: unknown[] }).backups.length, 1);
   const activity = await app.fetch('/api/admin/activity', { headers: { Cookie: cookie } });
   assert.ok((await activity.json() as { activity: Array<{ action: string }> }).activity.some((item) => item.action === 'create'));
+});
+
+
+test('media assets are copied into R2 backups and restored with their metadata', async () => {
+  const objects = new Map<string, { bytes: Uint8Array; contentType: string }>();
+  const bucket: TestMediaBucket = {
+    put: async (key, value, options) => {
+      const bytes = value instanceof ReadableStream
+        ? new Uint8Array(await new Response(value).arrayBuffer())
+        : ArrayBuffer.isView(value)
+          ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+          : new Uint8Array(value);
+      objects.set(key, { bytes, contentType: options?.httpMetadata?.contentType ?? 'application/octet-stream' });
+    },
+    get: async (key) => {
+      const item = objects.get(key);
+      return item ? { body: new Response(item.bytes).body, httpMetadata: { contentType: item.contentType }, size: item.bytes.length } : null;
+    },
+    delete: async (key) => { objects.delete(key); },
+  };
+  const app = createTestApp(TEST_SECRETS, {}, bucket);
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const form = new FormData();
+  form.set('folder', 'blog');
+  form.set('file', new File([Uint8Array.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])], 'cover.png', { type: 'image/png' }));
+  const upload = await app.fetch('/api/admin/media', { method: 'POST', headers: { Cookie: cookie, Origin: 'https://picshrink.test' }, body: form });
+  assert.equal(upload.status, 201);
+  const asset = (await upload.json() as { media: { id: string; key: string; folder: string } }).media;
+  assert.equal(asset.folder, 'blog');
+
+  const backup = await app.fetch('/api/admin/backups', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ label: 'Media backup' }),
+  });
+  assert.equal(backup.status, 201);
+  const backupResult = (await backup.json() as { backup: { id: string; mediaObjectCount: number } }).backup;
+  assert.equal(backupResult.mediaObjectCount, 1);
+  assert.ok([...objects.keys()].some((key) => key.startsWith('backups/' + backupResult.id + '/')));
+
+  const deletion = await app.fetch('/api/admin/media/' + asset.id, { method: 'DELETE', headers: { Cookie: cookie, Origin: 'https://picshrink.test' } });
+  assert.equal(deletion.status, 200);
+  assert.equal((await app.fetch('/api/admin/media', { headers: { Cookie: cookie } }).then((response) => response.json()) as { media: unknown[] }).media.length, 0);
+
+  const restore = await app.fetch('/api/admin/backups/' + backupResult.id + '/restore', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' }, body: '{}',
+  });
+  assert.equal(restore.status, 200);
+  const media = (await app.fetch('/api/admin/media', { headers: { Cookie: cookie } }).then((response) => response.json()) as { media: Array<{ id: string; folder: string }> }).media;
+  assert.equal(media.length, 1);
+  assert.equal(media[0].id, asset.id);
+  assert.equal(media[0].folder, 'blog');
+  assert.equal((await app.fetch('/media/' + asset.id)).status, 200);
 });
 
 test('admin logout clears the secure session cookie', async () => {
