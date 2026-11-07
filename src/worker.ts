@@ -334,8 +334,13 @@ export class AdminData {
 
   private async handlePublicContent(request: Request): Promise<Response> {
     if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
-    const slug = decodeURIComponent(new URL(request.url).pathname.slice('/api/content/'.length));
+    const pathname = new URL(request.url).pathname;
     const state = await this.getState();
+    if (pathname === '/api/content') {
+      const content = (state.content ?? []).filter((item) => item.status === 'published').sort((a,b) => (b.publishedAt ?? b.updatedAt) - (a.publishedAt ?? a.updatedAt)).map(({id,title,slug,excerpt,seoTitle,metaDescription,ogImageUrl,publishedAt,updatedAt}) => ({id,title,slug,excerpt,seoTitle,metaDescription,ogImageUrl,publishedAt,updatedAt}));
+      return jsonResponse({ content }, 200);
+    }
+    const slug = decodeURIComponent(pathname.slice('/api/content/'.length));
     const content = (state.content ?? []).find((item) => item.slug === slug && item.status === 'published');
     if (!content) return jsonResponse({ error: 'Content not found.' }, 404);
     return jsonResponse({ content }, 200);
