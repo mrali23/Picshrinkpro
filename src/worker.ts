@@ -187,7 +187,6 @@ export class AdminData {
       return jsonResponse({ content: items }, 200);
     }
     if (request.method !== 'GET' && actor.role === 'viewer') return jsonResponse({ error: 'Forbidden' }, 403);
-    if (request.method !== 'GET' && actor.role === 'viewer') return jsonResponse({ error: 'Forbidden' }, 403);
     if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
     const body = (await readJsonBody<Record<string, unknown>>(request)) ?? {};
     if (request.method === 'POST') {
