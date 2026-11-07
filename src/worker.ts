@@ -1019,7 +1019,11 @@ const worker = {
     const url = new URL(request.url);
     let response: Response;
 
-    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/')) {
+    if (url.pathname === '/sitemap.xml' && request.method === 'GET') {
+      const staticSitemap = await env.ASSETS.fetch(request);
+      const contentIndex = await adminApi(new Request(new URL('/api/content', url), { method: 'GET' }), env);
+      response = await mergeManagedSitemap(staticSitemap, contentIndex);
+    } else if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/')) {
       response = await adminApi(request, env);
     } else {
       const redirectResponse = request.method === 'GET' ? await adminApi(new Request(new URL(`/api/redirect/resolve?path=${encodeURIComponent(url.pathname)}`, url), { method: 'GET' }), env) : undefined;
@@ -1035,5 +1039,28 @@ const worker = {
     return withSecurityHeaders(response, url.pathname);
   },
 };
+
+
+async function mergeManagedSitemap(staticResponse: Response, contentResponse: Response): Promise<Response> {
+  if (!staticResponse.ok || !contentResponse.ok) return staticResponse;
+  const xml = await staticResponse.text();
+  if (!xml.includes('</urlset>')) return new Response(xml, { status: staticResponse.status, headers: staticResponse.headers });
+  const data = await contentResponse.json() as { content?: Array<{ slug: string; updatedAt?: number; publishedAt?: number }> };
+  const entries = (data.content ?? []).filter((item) => typeof item.slug === 'string' && /^[a-z0-9-]{1,160}$/.test(item.slug)).map((item) => {
+    const loc = `https://picshrinkpro.com/blog/${item.slug}`;
+    const timestamp = item.publishedAt ?? item.updatedAt;
+    const lastmod = typeof timestamp === 'number' ? new Date(timestamp).toISOString().slice(0, 10) : '';
+    return `<url><loc>${xmlEscape(loc)}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}</url>`;
+  }).join('');
+  const merged = xml.replace('</urlset>', `${entries}</urlset>`);
+  const headers = new Headers(staticResponse.headers);
+  headers.set('Content-Type', 'application/xml; charset=utf-8');
+  headers.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+  return new Response(merged, { status: 200, headers });
+}
+
+function xmlEscape(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
 
 export default worker;
