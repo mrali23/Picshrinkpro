@@ -52,7 +52,7 @@ export function BlogPostPage() {
     };
     return (
       <article className="min-h-screen bg-slate-50 py-10">
-        <SEOHead title={managedPost.seoTitle || managedPost.title} description={managedPost.metaDescription || managedPost.excerpt} path={path} ogType="article" ogImage={managedPost.ogImageUrl || undefined} schema={managedSchema} />
+        <SEOHead title={managedPost.seoTitle || managedPost.title} description={managedPost.metaDescription || managedPost.excerpt} path={path} canonicalUrl={managedPost.canonicalUrl || undefined} ogType="article" ogImage={managedPost.ogImageUrl || undefined} schema={managedSchema} />
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
           <Link to="/blog" className="mb-6 inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600"><ArrowLeft className="h-4 w-4"/>Back to All Blog Posts</Link>
           <header className="mb-8 mt-5 space-y-4"><p className="text-xs font-semibold uppercase tracking-wider text-blue-600">PicShrink Guide</p><h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">{managedPost.title}</h1><p className="text-lg leading-relaxed text-slate-600">{managedPost.excerpt}</p><time className="text-xs text-slate-400">{new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(new Date(managedPost.publishedAt ?? managedPost.updatedAt))}</time></header>
