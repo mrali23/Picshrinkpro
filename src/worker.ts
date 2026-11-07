@@ -56,7 +56,7 @@ interface R2BucketLike {
 }
 type AdminRole = 'admin' | 'editor' | 'viewer';
 interface AdminPrincipal { username: string; role: AdminRole; }
-interface AdminUserRecord { id: string; username: string; email: string; passwordSalt: string; passwordHash: string; role: AdminRole; active: boolean; createdAt: number; lastLoginAt?: number; }
+interface AdminUserRecord { id: string; username: string; email: string; passwordSalt: string; passwordHash: string; role: AdminRole; active: boolean; createdAt: number; lastLoginAt?: number; sessionVersion: number; }
 interface AdminState {
   settings: SiteSettings;
   events: AnalyticsEvent[];
@@ -334,7 +334,7 @@ export class AdminData {
         return jsonResponse({ error: 'Username or email is already registered.' }, 409);
       }
       const credentials = await hashAdminPassword(password);
-      const user: AdminUserRecord = { id: `usr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`, username, email, ...credentials, role, active: true, createdAt: Date.now() };
+      const user: AdminUserRecord = { id: `usr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`, username, email, ...credentials, role, active: true, createdAt: Date.now(), sessionVersion: 1 };
       state.users = [...(state.users ?? []), user];
       await this.storage.put('admin-state', state);
       await this.recordActivity(actor.username, 'create', 'admin_user', user.id);
@@ -350,7 +350,7 @@ export class AdminData {
       if (target.role === 'admin' && (role !== 'admin' || !active) && users.filter((user) => user.role === 'admin' && user.active).length <= 1) {
         return jsonResponse({ error: 'At least one active administrator must remain.' }, 400);
       }
-      target.role = role; target.active = active;
+      target.role = role; target.active = active; target.sessionVersion = (target.sessionVersion ?? 1) + 1;
       if (typeof body.email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) target.email = body.email.trim().toLowerCase();
       if (typeof body.password === 'string' && body.password.length >= 12) Object.assign(target, await hashAdminPassword(body.password));
       await this.storage.put('admin-state', state);
@@ -533,7 +533,7 @@ export class AdminData {
         safeEqual(username, this.secrets.ADMIN_USERNAME as string) &&
         safeEqual(password, this.secrets.ADMIN_PASSWORD as string)) {
       const passwordRecord = await hashAdminPassword(password);
-      user = { id: 'usr_root', username, email: '', ...passwordRecord, role: 'admin', active: true, createdAt: now, lastLoginAt: now };
+      user = { id: 'usr_root', username, email: '', ...passwordRecord, role: 'admin', active: true, createdAt: now, lastLoginAt: now, sessionVersion: 1 };
       state.users = [user];
       await this.storage.put('admin-state', state);
     } else if (user && !(await verifyAdminPassword(password, user.passwordSalt, user.passwordHash))) {
@@ -549,7 +549,7 @@ export class AdminData {
     user.lastLoginAt = now;
     await this.storage.put('admin-state', state);
     this.loginFailures.delete(clientKey);
-    const sessionToken = createSessionToken(user.username, user.role, this.secrets.SESSION_SECRET as string);
+    const sessionToken = createSessionToken(user.username, user.role, user.sessionVersion ?? 1, this.secrets.SESSION_SECRET as string);
     return new Response(JSON.stringify({ authenticated: true, username: user.username, role: user.role }), {
       status: 200,
       headers: {
@@ -776,7 +776,7 @@ export class AdminData {
     const claims = verifySessionToken(match[1], secret);
     if (!claims) return undefined;
     const user = (state.users ?? []).find((item) => item.username.toLowerCase() === claims.username.toLowerCase() && item.active);
-    return user ? { username: user.username, role: user.role } : undefined;
+    return user && (user.sessionVersion ?? 1) === claims.sessionVersion ? { username: user.username, role: user.role } : undefined;
   }
 }
 
@@ -922,8 +922,8 @@ function sign(payload: string, secret: string): string {
   return createHmac('sha256', secret).update(payload).digest('base64url');
 }
 
-function createSessionToken(username: string, role: AdminRole, secret: string): string {
-  const payload = toBase64Url(JSON.stringify({ u: username, r: role, exp: Date.now() + SESSION_TTL_SECONDS * 1000 }));
+function createSessionToken(username: string, role: AdminRole, sessionVersion: number, secret: string): string {
+  const payload = toBase64Url(JSON.stringify({ u: username, r: role, v: sessionVersion, exp: Date.now() + SESSION_TTL_SECONDS * 1000 }));
   return `${payload}.${sign(payload, secret)}`;
 }
 
@@ -933,10 +933,10 @@ function verifySessionToken(token: string, secret: string): { username: string; 
   if (!safeEqual(signature, sign(payload, secret))) return undefined;
 
   try {
-    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { u?: unknown; r?: unknown; exp?: unknown };
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { u?: unknown; r?: unknown; v?: unknown; exp?: unknown };
     if (typeof data.u !== 'string' || typeof data.exp !== 'number' || data.exp < Date.now()) return undefined;
     const role = data.r === 'editor' || data.r === 'viewer' ? data.r : 'admin';
-    return { username: data.u, role };
+    return { username: data.u, role, sessionVersion: typeof data.v === 'number' ? data.v : 1 };
   } catch {
     return undefined;
   }
