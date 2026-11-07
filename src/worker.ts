@@ -1127,8 +1127,8 @@ function renderManagedArticleHtml(article: PublicManagedArticle, url: URL, style
   const description = article.metaDescription?.trim() || article.excerpt;
   const canonical = sanitizeCanonicalUrl(article.canonicalUrl) || `${url.origin}/blog/${encodeURIComponent(article.slug)}`;
   const image = safePublicUrl(article.ogImageUrl) || 'https://picshrinkpro.com/og-image.png';
-  const paragraphs = article.body.split(/\\r?\\n\\s*\\r?\\n/g).map((part) => part.trim()).filter(Boolean)
-    .map((part) => `<p class="mb-5 text-base leading-8 text-slate-700">${escapeHtml(part).replace(/\\r?\\n/g, '<br>')}</p>`).join('\\n');
+  const paragraphs = article.body.split(/\r?\n\s*\r?\n/g).map((part) => part.trim()).filter(Boolean)
+    .map((part) => `<p class="mb-5 text-base leading-8 text-slate-700">${escapeHtml(part).replace(/\r?\n/g, '<br>')}</p>`).join('\n');
   const published = article.publishedAt ? new Date(article.publishedAt).toISOString() : new Date(article.updatedAt).toISOString();
   const schema = JSON.stringify({
     '@context': 'https://schema.org', '@type': 'BlogPosting', headline: article.title,
