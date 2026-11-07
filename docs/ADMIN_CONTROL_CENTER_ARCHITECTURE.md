@@ -109,6 +109,7 @@ Do not treat this branch as a production-ready release until the outstanding ite
 Additional implementation now present in `feat/admin-control-center-phase-2`:
 
 - The homepage's hero, tools and feature sections load published configuration from a public-safe Worker endpoint. Admin visibility and text edits now affect the public homepage.
+- Header navigation links are editable in the Website Builder and are delivered to desktop/mobile navigation through a public-safe endpoint. Only same-site paths are accepted.
 - CMS articles can be scheduled. A Cloudflare Cron trigger runs every minute and publishes due articles through a Worker-internal endpoint protected by the Worker session secret.
 - Published CMS articles are added to the runtime XML sitemap. Editors can opt individual articles out of the sitemap.
 - Managed CMS article routes are served as crawler-readable HTML with title, description, canonical URL, Open Graph/Twitter metadata, BlogPosting JSON-LD and article body content. The response uses the existing site's built CSS when available.
