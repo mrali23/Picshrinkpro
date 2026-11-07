@@ -12,7 +12,9 @@ interface AnalyticsSummary {
   recentEvents: AnalyticsEvent[];
 }
 
-type AdminTab = 'overview' | 'content' | 'media' | 'inbox' | 'site' | 'settings';
+type AdminRole = 'admin' | 'editor' | 'viewer';
+type AdminTab = 'overview' | 'content' | 'media' | 'inbox' | 'site' | 'users' | 'settings';
+interface AdminUser { id: string; username: string; email: string; role: AdminRole; active: boolean; createdAt: number; lastLoginAt?: number; }
 interface ManagedRedirect { id: string; sourcePath: string; destinationUrl: string; statusCode: 301 | 302 | 307 | 308; active: boolean; createdAt: number; }
 interface ManagedSection { id: string; key: string; title: string; content: string; visible: boolean; position: number; updatedAt: number; }
 interface ActivityEntry { id: string; actor: string; action: string; resource: string; resourceId?: string; createdAt: number; }
@@ -43,6 +45,9 @@ function formatTime(timestamp: number): string {
 
 function AdminDashboardContent() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [userRole, setUserRole] = useState<AdminRole>('admin');
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [userDraft, setUserDraft] = useState({ username: '', email: '', password: '', role: 'editor' as AdminRole });
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -65,34 +70,32 @@ function AdminDashboardContent() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const loadAdminData = useCallback(async () => {
-    const [nextSettings, nextSummary, inbox, contentResult, redirectResult, sectionResult, activityResult, backupResult] = await Promise.all([
+  const loadAdminData = useCallback(async (role: AdminRole = userRole) => {
+    const [nextSettings, nextSummary, contentResult, redirectResult, sectionResult, inbox, activity, backup, users] = await Promise.all([
       requestJson<SiteSettings>('/api/admin/settings'),
       requestJson<AnalyticsSummary>('/api/admin/analytics'),
-      requestJson<{ messages: ContactMessage[] }>('/api/admin/messages'),
       requestJson<{ content: ManagedContent[] }>('/api/admin/content'),
       requestJson<{ redirects: ManagedRedirect[] }>('/api/admin/redirects'),
       requestJson<{ sections: ManagedSection[] }>('/api/admin/homepage-sections'),
-      requestJson<{ activity: ActivityEntry[] }>('/api/admin/activity'),
-      requestJson<{ backups: BackupEntry[] }>('/api/admin/backups'),
+      role === 'admin' ? requestJson<{ messages: ContactMessage[] }>('/api/admin/messages') : Promise.resolve({ messages: [] as ContactMessage[] }),
+      role === 'admin' ? requestJson<{ activity: ActivityEntry[] }>('/api/admin/activity') : Promise.resolve({ activity: [] as ActivityEntry[] }),
+      role === 'admin' ? requestJson<{ backups: BackupEntry[] }>('/api/admin/backups') : Promise.resolve({ backups: [] as BackupEntry[] }),
+      role === 'admin' ? requestJson<{ users: AdminUser[] }>('/api/admin/users') : Promise.resolve({ users: [] as AdminUser[] }),
     ]);
-    setSettings(nextSettings);
-    setSummary(nextSummary);
-    setMessages(inbox.messages);
-    setContentItems(contentResult.content);
-    setRedirects(redirectResult.redirects);
-    setSections(sectionResult.sections);
-    setActivityEntries(activityResult.activity);
-    setBackups(backupResult.backups);
-  }, []);
+    setSettings(nextSettings); setSummary(nextSummary); setContentItems(contentResult.content);
+    setRedirects(redirectResult.redirects); setSections(sectionResult.sections);
+    setMessages(inbox.messages); setActivityEntries(activity.activity); setBackups(backup.backups); setAdminUsers(users.users);
+  }, [userRole]);
 
   useEffect(() => {
     let active = true;
-    requestJson<{ authenticated: boolean }>('/api/admin/session')
+    requestJson<{ authenticated: boolean; role?: AdminRole }>('/api/admin/session')
       .then((session) => {
         if (!active) return;
         setAuthenticated(session.authenticated);
-        if (session.authenticated) loadAdminData().catch((reason: unknown) => {
+        const role = session.role ?? 'admin';
+        setUserRole(role);
+        if (session.authenticated) loadAdminData(role).catch((reason: unknown) => {
           if (active) setError(reason instanceof Error ? reason.message : 'Could not load the admin dashboard.');
         });
       })
@@ -108,12 +111,12 @@ function AdminDashboardContent() {
   useEffect(() => {
     if (!authenticated) return;
     const timer = window.setInterval(() => {
-      loadAdminData().catch((reason: unknown) => {
+      loadAdminData(userRole).catch((reason: unknown) => {
         setError(reason instanceof Error ? reason.message : 'Analytics refresh failed.');
       });
     }, 10_000);
     return () => window.clearInterval(timer);
-  }, [authenticated, loadAdminData]);
+  }, [authenticated, loadAdminData, userRole]);
 
 
   useEffect(() => {
@@ -132,19 +135,52 @@ function AdminDashboardContent() {
     setBusy(true);
     setError('');
     try {
-      await requestJson('/api/admin/login', {
+      const login = await requestJson<{ role: AdminRole }>('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
       setAuthenticated(true);
+      setUserRole(login.role);
       setPassword('');
-      await loadAdminData();
+      await loadAdminData(login.role);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Admin login failed.');
     } finally {
       setBusy(false);
     }
+  };
+
+
+  const createAdminUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      const result = await requestJson<{ user: AdminUser }>('/api/admin/users', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(userDraft),
+      });
+      setAdminUsers((items) => [...items, result.user]);
+      setUserDraft({ username: '', email: '', password: '', role: 'editor' });
+      setNotice('User account created.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'User could not be created.'); }
+  };
+
+  const updateAdminUser = async (user: AdminUser, patch: Partial<Pick<AdminUser, 'role' | 'active'>>) => {
+    try {
+      await requestJson('/api/admin/users/' + encodeURIComponent(user.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+      });
+      setAdminUsers((items) => items.map((item) => item.id === user.id ? { ...item, ...patch } : item));
+      setNotice('User permissions updated.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'User could not be updated.'); }
+  };
+
+  const deleteAdminUser = async (user: AdminUser) => {
+    if (!window.confirm('Delete admin account "' + user.username + '"?')) return;
+    try {
+      await requestJson('/api/admin/users/' + encodeURIComponent(user.id), { method: 'DELETE' });
+      setAdminUsers((items) => items.filter((item) => item.id !== user.id));
+      setNotice('User account deleted.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'User could not be deleted.'); }
   };
 
   const handleSave = async (event: FormEvent<HTMLFormElement>) => {
@@ -177,6 +213,7 @@ function AdminDashboardContent() {
         body: '{}',
       });
       setAuthenticated(false);
+      setUserRole('admin');
       setSummary(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not log out.');
@@ -374,12 +411,14 @@ function AdminDashboardContent() {
           <button onClick={() => setTab('overview')} className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${tab === 'overview' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500'}`}>
             <BarChart3 size={17} /> Overview
           </button>
-          <button onClick={() => setTab('inbox')} className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${tab === 'inbox' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500'}`}>
+          {userRole === 'admin' &&           <button onClick={() => setTab('inbox')} className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${tab === 'inbox' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500'}`}>
             <Mail size={17} /> Inbox <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{messages.filter((message) => message.status === 'unread').length}</span>
           </button>
-          <button onClick={() => setTab('settings')} className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${tab === 'settings' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500'}`}>
+          }
+          {userRole === 'admin' &&           <button onClick={() => setTab('settings')} className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${tab === 'settings' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500'}`}>
             <Settings size={17} /> Site settings
           </button>
+          }
         </nav>
 
         {error && <p role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
@@ -426,6 +465,13 @@ function AdminDashboardContent() {
             </section>
             <p className="mt-4 text-xs text-slate-500">Live metrics refresh every 10 seconds. Active visitors are anonymous browser IDs seen within the last 5 minutes. GA4 visitor and revenue reports are available in your Google Analytics account.</p>
           </>
+        ) : tab === 'users' ? (
+          <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
+            <div className="space-y-3"><div><h2 className="text-xl font-bold text-slate-900">Users & permissions</h2><p className="mt-1 text-sm text-slate-500">Accounts use PBKDF2 password hashes. Permissions are enforced by the Worker, not just by hiding controls.</p></div>
+              {adminUsers.map((user) => <article key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div><p className="font-semibold text-slate-900">{user.username}</p><p className="text-xs text-slate-500">{user.email || 'No email'} · {user.active ? 'Active' : 'Disabled'}</p></div><div className="flex flex-wrap items-center gap-2"><select value={user.role} disabled={user.username === username} onChange={(e) => updateAdminUser(user,{role:e.target.value as AdminRole})} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="admin">Admin</option><option value="editor">Editor</option><option value="viewer">Viewer</option></select><button onClick={() => updateAdminUser(user,{active:!user.active})} disabled={user.username === username} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-40">{user.active ? 'Disable' : 'Enable'}</button><button onClick={() => deleteAdminUser(user)} disabled={user.username === username} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-40">Delete</button></div></article>)}
+            </div>
+            <form onSubmit={createAdminUser} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-bold text-slate-900">Add administrator account</h3><label className="block text-sm font-semibold text-slate-700">Username<input required minLength={3} maxLength={32} value={userDraft.username} onChange={(e)=>setUserDraft(v=>({...v,username:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label><label className="block text-sm font-semibold text-slate-700">Email<input required type="email" value={userDraft.email} onChange={(e)=>setUserDraft(v=>({...v,email:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label><label className="block text-sm font-semibold text-slate-700">Temporary password<input required minLength={12} type="password" autoComplete="new-password" value={userDraft.password} onChange={(e)=>setUserDraft(v=>({...v,password:e.target.value}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"/></label><label className="block text-sm font-semibold text-slate-700">Role<select value={userDraft.role} onChange={(e)=>setUserDraft(v=>({...v,role:e.target.value as AdminRole}))} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"><option value="admin">Admin</option><option value="editor">Editor</option><option value="viewer">Viewer</option></select></label><button className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">Create account</button><p className="text-xs text-slate-500">Share temporary passwords through a secure channel and require users to change them separately; a self-service password change flow is still pending.</p></form>
+          </section>
         ) : tab === 'content' ? (
           <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
             <div className="space-y-3">
@@ -504,12 +550,12 @@ function AdminDashboardContent() {
               </div>
               <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between"><div><h3 className="font-bold text-slate-900">Activity log</h3><p className="mt-1 text-xs text-slate-500">Recent admin changes recorded by the Worker.</p></div><Activity className="text-blue-600"/></div>
-                <div className="max-h-72 space-y-2 overflow-auto">{activityEntries.length ? activityEntries.slice(0,50).map((entry) => <div key={entry.id} className="flex justify-between gap-3 rounded-lg bg-slate-50 p-3 text-xs"><span className="text-slate-700"><b>{entry.actor}</b> {entry.action} {entry.resource} {entry.resourceId || ''}</span><time className="shrink-0 text-slate-400">{new Intl.DateTimeFormat(undefined,{dateStyle:'short',timeStyle:'short'}).format(entry.createdAt)}</time></div>) : <p className="text-sm text-slate-400">No administrative activity recorded yet.</p>}</div>
+                <div className="max-h-72 space-y-2 overflow-auto">{userRole === 'admin' && (activityEntries.length ? activityEntries.slice(0,50).map((entry) => <div key={entry.id} className="flex justify-between gap-3 rounded-lg bg-slate-50 p-3 text-xs"><span className="text-slate-700"><b>{entry.actor}</b> {entry.action} {entry.resource} {entry.resourceId || ''}</span><time className="shrink-0 text-slate-400">{new Intl.DateTimeFormat(undefined,{dateStyle:'short',timeStyle:'short'}).format(entry.createdAt)}</time></div>)  : <p className="text-sm text-slate-400">No administrative activity recorded yet.</p>)}</div>
               </div>
-              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              {userRole === 'admin' && <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between"><div><h3 className="font-bold text-slate-900">Backup snapshots</h3><p className="mt-1 text-xs text-slate-500">Snapshots cover Durable Object application state, not R2 media objects.</p></div><button onClick={createBackup} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Create backup</button></div>
                 <div className="space-y-2">{backups.length ? backups.map((backup) => <div key={backup.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="text-sm font-semibold text-slate-800">{backup.label}</p><time className="text-xs text-slate-400">{new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(backup.createdAt)}</time></div><button onClick={() => restoreBackup(backup.id)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">Restore</button></div>) : <p className="text-sm text-slate-400">No backups created.</p>}</div>
-              </div>
+              </div>}
             </div>
           </section>
         ) : (
