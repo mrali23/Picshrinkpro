@@ -49,7 +49,7 @@ interface HomepageSection {
   id: string; key: string; title: string; content: string;
   visible: boolean; position: number; updatedAt: number;
 }
-interface MediaAsset { id: string; key: string; name: string; type: string; size: number; createdAt: number; }
+interface MediaAsset { id: string; key: string; name: string; type: string; size: number; altText?: string; folder?: string; createdAt: number; }
 interface R2BucketLike {
   put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string,string> }): Promise<unknown>;
   get(key: string): Promise<{ body: ReadableStream | null; httpMetadata?: { contentType?: string }; size?: number } | null>;
@@ -343,7 +343,9 @@ export class AdminData {
       const extension = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif', 'image/gif': 'gif' } as Record<string,string>)[file.type];
       const key = `uploads/${id}.${extension}`;
       await this.mediaBucket.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { uploadedBy: actor.username } });
-      const asset: MediaAsset = { id, key, name: file.name.slice(0,200), type: file.type, size: file.size, createdAt: Date.now() };
+      const folderValue = form?.get('folder');
+      const folder = typeof folderValue === 'string' ? folderValue.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '').slice(0,60) : '';
+      const asset: MediaAsset = { id, key, name: file.name.slice(0,200), type: file.type, size: file.size, altText: '', folder, createdAt: Date.now() };
       state.media = [asset, ...(state.media ?? [])].slice(0, 1000);
       await this.storage.put('admin-state', state);
       await this.recordActivity(actor.username, 'upload', 'media', id);
@@ -355,6 +357,21 @@ export class AdminData {
       const object = await this.mediaBucket.get(asset.key);
       if (!object?.body) return jsonResponse({ error: 'Media object is unavailable.' }, 404);
       return new Response(object.body, { status: 200, headers: { 'Content-Type': object.httpMetadata?.contentType ?? asset.type, 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' } });
+    }
+    if (request.method === 'PATCH' && id) {
+      const asset = (state.media ?? []).find((item) => item.id === id);
+      if (!asset) return jsonResponse({ error: 'Media asset not found.' }, 404);
+      const body = (await readJsonBody<{ name?: unknown; altText?: unknown; folder?: unknown }>(request)) ?? {};
+      if (typeof body.name === 'string') {
+        const name = body.name.trim();
+        if (!name || name.length > 200) return jsonResponse({ error: 'Media filename must contain 1–200 characters.' }, 400);
+        asset.name = name;
+      }
+      if (typeof body.altText === 'string') asset.altText = body.altText.trim().slice(0, 300);
+      if (typeof body.folder === 'string') asset.folder = body.folder.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '').slice(0,60);
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor.username, 'update', 'media', id);
+      return jsonResponse({ media: asset }, 200);
     }
     if (request.method === 'DELETE' && id) {
       const asset = (state.media ?? []).find((item) => item.id === id);
