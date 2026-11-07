@@ -4,6 +4,7 @@ import { HelmetProvider } from 'react-helmet-async';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { RelatedLinks } from './components/common/RelatedLinks';
 
 // Route-level lazy loading keeps image-processing dependencies out of the initial page bundle.
 const HomePage = lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })));
@@ -82,6 +83,7 @@ export function AppRoutes() {
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
             </Suspense>
+            <RelatedLinks />
           </main>
           <Footer />
         </div>
