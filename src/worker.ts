@@ -45,6 +45,7 @@ interface ManagedRedirect {
   id: string; sourcePath: string; destinationUrl: string;
   statusCode: 301 | 302 | 307 | 308; active: boolean; createdAt: number;
 }
+interface ManagedNavigationLink { id: string; label: string; url: string; visible: boolean; position: number; }
 interface HomepageSection {
   id: string; key: string; title: string; content: string;
   visible: boolean; position: number; updatedAt: number;
@@ -67,6 +68,7 @@ interface AdminState {
   activity?: AdminActivity[];
   redirects?: ManagedRedirect[];
   homepageSections?: HomepageSection[];
+  navigationLinks?: ManagedNavigationLink[];
   backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups'> }>;
   media?: MediaAsset[];
   revokedSessions?: string[];
@@ -117,6 +119,7 @@ export class AdminData {
     if (path === '/api/sitemap-content') return this.handleSitemapContent(request);
     if (path === '/api/internal/publish-scheduled') return this.handleScheduledPublishing(request);
     if (path === '/api/homepage-sections') return this.handlePublicHomepageSections(request);
+    if (path === '/api/navigation') return this.handlePublicNavigation(request);
     if (path.startsWith('/media/')) return this.handlePublicMedia(request);
     if (path === '/api/settings') {
       return this.handleGetPublicSettings();
@@ -166,6 +169,7 @@ export class AdminData {
       return this.handleRedirects(request);
     }
     if (path === '/api/admin/homepage-sections') return this.handleHomepageSections(request);
+    if (path === '/api/admin/navigation') return this.handleAdminNavigation(request);
     if (path === '/api/admin/backups' || path.startsWith('/api/admin/backups/')) {
       return this.handleBackups(request);
     }
@@ -501,6 +505,39 @@ export class AdminData {
         'X-Content-Type-Options': 'nosniff',
       },
     });
+  }
+
+  private async handlePublicNavigation(request: Request): Promise<Response> {
+    if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+    const state = await this.getState();
+    const links = (state.navigationLinks ?? defaultNavigationLinks()).filter((item) => item.visible).sort((a,b) => a.position-b.position);
+    return new Response(JSON.stringify({ links }), { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' } });
+  }
+
+  private async handleAdminNavigation(request: Request): Promise<Response> {
+    const actor = await this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (actor.role === 'viewer' && request.method !== 'GET') return jsonResponse({ error: 'Forbidden' }, 403);
+    const state = await this.getState();
+    if (request.method === 'GET') return jsonResponse({ links: state.navigationLinks ?? defaultNavigationLinks() }, 200);
+    if (request.method !== 'PUT' || !isSameOrigin(request)) return jsonResponse({ error: 'Method not allowed' }, 405);
+    const body = (await readJsonBody<{ links?: unknown }>(request)) ?? {};
+    if (!Array.isArray(body.links) || body.links.length > 20) return jsonResponse({ error: 'Provide no more than 20 navigation links.' }, 400);
+    const links: ManagedNavigationLink[] = [];
+    for (const [index, raw] of body.links.entries()) {
+      if (!raw || typeof raw !== 'object') return jsonResponse({ error: 'Invalid navigation link.' }, 400);
+      const item = raw as Record<string, unknown>;
+      const label = typeof item.label === 'string' ? item.label.trim().slice(0,40) : '';
+      const url = typeof item.url === 'string' ? item.url.trim() : '';
+      if (!label || !url.startsWith('/') || url.startsWith('//') || url.length > 300 || /[\\r\\n]/.test(url)) {
+        return jsonResponse({ error: 'Each link needs a label and a same-site path beginning with one slash.' }, 400);
+      }
+      links.push({ id: typeof item.id === 'string' ? item.id.slice(0,80) : `nav_${index}`, label, url, visible: item.visible !== false, position: index });
+    }
+    state.navigationLinks = links;
+    await this.storage.put('admin-state', state);
+    await this.recordActivity(actor.username, 'update', 'navigation');
+    return jsonResponse({ links }, 200);
   }
 
   private async handleHomepageSections(request: Request): Promise<Response> {
@@ -885,6 +922,7 @@ export class AdminData {
       if (!Array.isArray(state.activity)) state.activity = [];
       if (!Array.isArray(state.redirects)) state.redirects = [];
       if (!Array.isArray(state.homepageSections) || state.homepageSections.length === 0) state.homepageSections = defaultHomepageSections();
+      if (!Array.isArray(state.navigationLinks) || state.navigationLinks.length === 0) state.navigationLinks = defaultNavigationLinks();
       if (!Array.isArray(state.backups)) state.backups = [];
       if (!Array.isArray(state.media)) state.media = [];
       if (!Array.isArray(state.revokedSessions)) state.revokedSessions = [];
@@ -897,7 +935,7 @@ export class AdminData {
       settings: { ...DEFAULT_SITE_SETTINGS },
       events: [],
       messages: [], content: [], contentRevisions: [], activity: [], redirects: [],
-      homepageSections: defaultHomepageSections(), backups: [], media: [], revokedSessions: [], users: [], loginAttempts: [],
+      homepageSections: defaultHomepageSections(), navigationLinks: defaultNavigationLinks(), backups: [], media: [], revokedSessions: [], users: [], loginAttempts: [],
     };
     await this.storage.put('admin-state', freshState);
     return freshState;
@@ -995,6 +1033,16 @@ async function verifyAdminPassword(password: string, saltValue: string, expected
 
 function escapeXml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+function defaultNavigationLinks(): ManagedNavigationLink[] {
+  return [
+    { id: 'nav_compress', label: 'Compress', url: '/compressor', visible: true, position: 0 },
+    { id: 'nav_bg', label: 'Remove BG', url: '/bg-remover', visible: true, position: 1 },
+    { id: 'nav_resize', label: 'Resize', url: '/resizer', visible: true, position: 2 },
+    { id: 'nav_blog', label: 'Blog', url: '/blog', visible: true, position: 3 },
+    { id: 'nav_about', label: 'About', url: '/about', visible: true, position: 4 },
+  ];
 }
 
 function defaultHomepageSections(): HomepageSection[] {
