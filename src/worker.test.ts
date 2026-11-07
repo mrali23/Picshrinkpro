@@ -189,9 +189,6 @@ test('CMS supports draft creation, versioned editing, publishing, and public rea
   const publicArticle = await app.fetch('/api/content/managed-article');
   assert.equal(publicArticle.status, 200);
   assert.equal((await publicArticle.json() as { content: { status: string } }).content.status, 'published');
-  const adminIndex = await app.fetch('/api/admin/content', { headers: { Cookie: cookie } });
-  const adminItems = (await adminIndex.json() as { content: Array<{ slug: string; status: string }> }).content;
-  assert.ok(adminItems.some((item) => item.slug === 'scheduled-release' && item.status === 'published'));
   const publicIndex = await app.fetch('/api/content');
   assert.equal((await publicIndex.json() as { content: unknown[] }).content.length, 1);
 });
@@ -219,6 +216,9 @@ test('CMS scheduled articles stay private until the authenticated publisher runs
   });
   assert.equal(publish.status, 200);
   assert.equal((await publish.json() as { published: number }).published, 1);
+  const adminIndex = await app.fetch('/api/admin/content', { headers: { Cookie: cookie } });
+  const adminItems = (await adminIndex.json() as { content: Array<{ slug: string; status: string }> }).content;
+  assert.ok(adminItems.some((item) => item.slug === 'scheduled-release' && item.status === 'published'));
   const publicIndex = await app.fetch('/api/content');
   const publishedItems = (await publicIndex.json() as { content: Array<{ slug: string }> }).content;
   assert.ok(publishedItems.some((item) => item.slug === 'scheduled-release'));
