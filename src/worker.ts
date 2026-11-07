@@ -65,7 +65,7 @@ interface AdminState {
   activity?: AdminActivity[];
   redirects?: ManagedRedirect[];
   homepageSections?: HomepageSection[];
-  backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups'> }>;
+  backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups' | 'media' | 'users' | 'revokedSessions' | 'loginAttempts'> }>;
   media?: MediaAsset[];
   revokedSessions?: string[];
   users?: AdminUserRecord[];
@@ -184,7 +184,7 @@ export class AdminData {
     const id = url.pathname.startsWith('/api/admin/content/') ? decodeURIComponent(url.pathname.slice('/api/admin/content/'.length)) : '';
     if (request.method === 'GET') {
       const status = url.searchParams.get('status');
-      const items = (state.content ?? []).filter((item) => !status || item.status === status).sort((a,b) => b.updatedAt-a.updatedAt);
+      const items = (state.content ?? []).filter((item) => actor.role === 'viewer' ? item.status === 'published' : (!status || item.status === status)).sort((a,b) => b.updatedAt-a.updatedAt);
       return jsonResponse({ content: items }, 200);
     }
     if (request.method !== 'GET' && actor.role === 'viewer') return jsonResponse({ error: 'Forbidden' }, 403);
@@ -450,8 +450,8 @@ export class AdminData {
     if (request.method === 'POST' && url.pathname === '/api/admin/backups') {
       if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
       const body = await readJsonBody<{ label?: unknown }>(request);
-      const { backups: previousBackups, ...snapshot } = state;
-      void previousBackups;
+      const { backups: previousBackups, media: currentMedia, users: currentUsers, revokedSessions: currentRevocations, loginAttempts: currentLoginAttempts, ...snapshot } = state;
+      void previousBackups; void currentMedia; void currentUsers; void currentRevocations; void currentLoginAttempts;
       const backup = { id: `bkp_${Date.now().toString(36)}`, label: typeof body?.label === 'string' ? body.label.slice(0,100) : 'Manual backup', createdAt: Date.now(), snapshot };
       state.backups = [backup, ...(state.backups ?? [])].slice(0, 20);
       await this.storage.put('admin-state', state);
@@ -463,7 +463,7 @@ export class AdminData {
       const id = decodeURIComponent(url.pathname.split('/').slice(-2)[0]);
       const backup = (state.backups ?? []).find((item) => item.id === id);
       if (!backup) return jsonResponse({ error: 'Backup not found.' }, 404);
-      const restored = { ...backup.snapshot, backups: state.backups };
+      const restored = { ...backup.snapshot, backups: state.backups, media: state.media, users: state.users, revokedSessions: state.revokedSessions, loginAttempts: state.loginAttempts };
       await this.storage.put('admin-state', restored);
       await this.recordActivity(actor.username, 'restore', 'backup', id);
       return jsonResponse({ restored: true }, 200);
@@ -553,6 +553,7 @@ export class AdminData {
     const username = typeof body?.username === 'string' ? body.username.trim() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
     let user = (state.users ?? []).find((item) => item.username.toLowerCase() === username.toLowerCase() && item.active);
+    let passwordChecked = false;
     if (!user && !(state.users ?? []).length &&
         safeEqual(username, this.secrets.ADMIN_USERNAME as string) &&
         safeEqual(password, this.secrets.ADMIN_PASSWORD as string)) {
@@ -560,13 +561,16 @@ export class AdminData {
       user = { id: 'usr_root', username, email: '', ...passwordRecord, role: 'admin', active: true, createdAt: now, lastLoginAt: now, sessionVersion: 1 };
       state.users = [user];
       await this.storage.put('admin-state', state);
-    } else if (user && !(await verifyAdminPassword(password, user.passwordSalt, user.passwordHash))) {
-      user = undefined;
+    } else if (user) {
+      passwordChecked = true;
+      if (!(await verifyAdminPassword(password, user.passwordSalt, user.passwordHash))) user = undefined;
     }
+    if (!user && !passwordChecked && (state.users ?? []).length) await hashAdminPassword(password);
 
     if (!user) {
       if (record) record.count += 1;
       else state.loginAttempts.push({ key: clientKey, count: 1, firstAt: now });
+      state.loginAttempts = state.loginAttempts.slice(-1000);
       await this.storage.put('admin-state', state);
       return jsonResponse({ error: 'Invalid login credentials' }, 401);
     }
@@ -575,6 +579,7 @@ export class AdminData {
     await this.storage.put('admin-state', state);
     state.loginAttempts = (state.loginAttempts ?? []).filter((attempt) => attempt.key !== clientKey);
     await this.storage.put('admin-state', state);
+    await this.recordActivity(user.username, 'login', 'admin_session');
     const sessionToken = createSessionToken(user.username, user.role, user.sessionVersion ?? 1, this.secrets.SESSION_SECRET as string);
     return new Response(JSON.stringify({ authenticated: true, username: user.username, role: user.role }), {
       status: 200,
@@ -589,6 +594,7 @@ export class AdminData {
   private async handleLogout(request: Request): Promise<Response> {
     if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
     if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+    const actor = await this.getSessionUser(request);
     const cookieValue = request.headers.get('Cookie') ?? '';
     const match = cookieValue.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
     if (match) {
@@ -597,6 +603,7 @@ export class AdminData {
       state.revokedSessions = [...(state.revokedSessions ?? []), tokenHash].slice(-2000);
       await this.storage.put('admin-state', state);
     }
+    if (actor) await this.recordActivity(actor.username, 'logout', 'admin_session');
     return new Response(JSON.stringify({ authenticated: false }), {
       status: 200,
       headers: {
@@ -626,6 +633,7 @@ export class AdminData {
       const body = await readJsonBody<unknown>(request);
       const nextSettings = sanitizeSettings(body);
       await this.saveSettings(nextSettings);
+      await this.recordActivity(sessionUser.username, 'update', 'site_settings');
       return jsonResponse(nextSettings, 200);
     }
 
@@ -695,6 +703,7 @@ export class AdminData {
     };
     state.messages = [entry, ...(state.messages ?? [])].slice(0, 1000);
     await this.storage.put('admin-state', state);
+    await this.recordActivity('public', 'submit', 'contact_message', entry.id);
     return jsonResponse({ accepted: true, id: entry.id }, 201);
   }
 
@@ -717,6 +726,7 @@ export class AdminData {
       if (!target) return jsonResponse({ error: 'Message not found.' }, 404);
       target.status = body.status as ContactMessage['status'];
       await this.storage.put('admin-state', state);
+      await this.recordActivity(actor.username, 'update', 'contact_message', target.id);
       return jsonResponse({ updated: true, message: target }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -1009,7 +1019,11 @@ const worker = {
     const url = new URL(request.url);
     let response: Response;
 
-    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/')) {
+    if (url.pathname === '/sitemap.xml' && request.method === 'GET') {
+      const staticSitemap = await env.ASSETS.fetch(request);
+      const contentIndex = await adminApi(new Request(new URL('/api/content', url), { method: 'GET' }), env);
+      response = await mergeManagedSitemap(staticSitemap, contentIndex);
+    } else if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/')) {
       response = await adminApi(request, env);
     } else {
       const redirectResponse = request.method === 'GET' ? await adminApi(new Request(new URL(`/api/redirect/resolve?path=${encodeURIComponent(url.pathname)}`, url), { method: 'GET' }), env) : undefined;
@@ -1025,5 +1039,28 @@ const worker = {
     return withSecurityHeaders(response, url.pathname);
   },
 };
+
+
+async function mergeManagedSitemap(staticResponse: Response, contentResponse: Response): Promise<Response> {
+  if (!staticResponse.ok || !contentResponse.ok) return staticResponse;
+  const xml = await staticResponse.text();
+  if (!xml.includes('</urlset>')) return new Response(xml, { status: staticResponse.status, headers: staticResponse.headers });
+  const data = await contentResponse.json() as { content?: Array<{ slug: string; updatedAt?: number; publishedAt?: number }> };
+  const entries = (data.content ?? []).filter((item) => typeof item.slug === 'string' && /^[a-z0-9-]{1,160}$/.test(item.slug)).map((item) => {
+    const loc = `https://picshrinkpro.com/blog/${item.slug}`;
+    const timestamp = item.publishedAt ?? item.updatedAt;
+    const lastmod = typeof timestamp === 'number' ? new Date(timestamp).toISOString().slice(0, 10) : '';
+    return `<url><loc>${xmlEscape(loc)}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}</url>`;
+  }).join('');
+  const merged = xml.replace('</urlset>', `${entries}</urlset>`);
+  const headers = new Headers(staticResponse.headers);
+  headers.set('Content-Type', 'application/xml; charset=utf-8');
+  headers.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+  return new Response(merged, { status: 200, headers });
+}
+
+function xmlEscape(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
 
 export default worker;

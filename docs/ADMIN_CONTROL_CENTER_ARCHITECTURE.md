@@ -73,7 +73,23 @@ All sensitive routes must authorize on the Worker. UI visibility is not an autho
 
 ## Infrastructure provisioning required before deployment
 
-The repository does not currently contain a D1 database ID or R2 bucket binding. Create the D1 database and R2 bucket in the target Cloudflare account, then add their generated identifiers to `wrangler.jsonc`. Do not commit account credentials. Apply migrations with Wrangler before deploying the Worker.
+The R2 binding is declared in `wrangler.jsonc` as `MEDIA` and expects a bucket named `picshrinkpro-media`. Create it in the same Cloudflare account before deployment:
+
+```bash
+bunx wrangler r2 bucket create picshrinkpro-media
+```
+
+Configure the bootstrap credentials as Worker secrets (never as `VITE_*` variables):
+
+```bash
+bunx wrangler secret put ADMIN_USERNAME
+bunx wrangler secret put ADMIN_PASSWORD
+bunx wrangler secret put SESSION_SECRET
+```
+
+Use a long, unique session secret of at least 32 characters. For local Worker development, place the same values in an untracked `.dev.vars` file. The first successful bootstrap login creates the initial admin account with a PBKDF2-SHA-256 password hash; subsequent accounts are created through the Users & roles module.
+
+The D1 migration is prepared but there is no D1 binding/database ID yet, and the current admin APIs have not been migrated to D1. Do not provision a placeholder ID or claim D1 is active. Apply the migration only after the D1 binding and data migration implementation are added. Do not commit account credentials.
 
 ## Implementation status on `feat/production-admin-control-center`
 
@@ -94,10 +110,10 @@ The following code is now present in the feature branch:
 
 - The D1 migration exists but the application APIs currently use Durable Object storage for application records and user accounts. D1 provisioning, data migration and D1-backed transactional persistence remain outstanding.
 - The R2 bucket must be created in the target Cloudflare account before deployment. The repository cannot create that account resource by itself.
-- CMS article rendering is client-hydrated. Server-rendered/prerendered HTML and sitemap generation for managed articles still need implementation for reliable crawler discovery.
+- CMS article rendering is client-hydrated. Published CMS articles are now appended to the live XML sitemap, but server-rendered/prerendered article HTML is still outstanding for reliable crawler indexing.
 - Homepage section configuration is stored but does not yet alter the public homepage layout.
 - Per-user accounts and admin/editor/viewer RBAC are implemented in Durable Object state. The first account is bootstrapped from Worker secrets; subsequent accounts use PBKDF2-SHA-256 password hashes and server-enforced roles. Admins manage accounts from the Users & roles tab. A secure self-service password change/reset flow and TOTP are still outstanding.
-- Login throttling still uses in-memory Worker state rather than a persistent shared rate limiter. TOTP, session/device management UI, password reset and dedicated security-event reporting remain outstanding.
+- Login throttling now persists hashed client keys and rolling attempt windows in Durable Object state. TOTP, session/device management UI, password reset and dedicated security-event reporting remain outstanding.
 - Backup/restore currently covers Durable Object application state only. It does not back up or restore R2 media objects, D1 data, or off-account disaster recovery.
 - Full content revisions, categories/tags, scheduled publishing, rich-text editing, media transformations, CSV exports, and realtime WebSocket updates remain outstanding.
 - Automated tests have been added for CMS, redirect, backup, contact and session workflows, but have not yet been executed in a local/CI environment.
