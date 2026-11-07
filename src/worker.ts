@@ -98,6 +98,10 @@ export class AdminData {
       return this.handleLogin(request);
     }
 
+    if (path === '/api/admin/logout') {
+      return this.handleLogout(request);
+    }
+
     if (path === '/api/admin/settings') {
       return this.handleAdminSettings(request);
     }
@@ -174,6 +178,19 @@ export class AdminData {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-store',
         'Set-Cookie': `${SESSION_COOKIE}=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_TTL_SECONDS}`,
+      },
+    });
+  }
+
+  private async handleLogout(request: Request): Promise<Response> {
+    if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
+    if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+    return new Response(JSON.stringify({ authenticated: false }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Set-Cookie': `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`,
       },
     });
   }
