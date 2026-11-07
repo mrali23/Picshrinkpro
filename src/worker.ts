@@ -20,9 +20,20 @@ export interface AnalyticsEvent {
   timestamp: number;
 }
 
+interface ContactMessage {
+  id: string;
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+  status: 'unread' | 'read' | 'archived';
+  createdAt: number;
+}
+
 interface AdminState {
   settings: SiteSettings;
   events: AnalyticsEvent[];
+  messages?: ContactMessage[];
 }
 
 interface StorageLike {
@@ -69,6 +80,14 @@ export class AdminData {
 
     if (path === '/api/analytics/track') {
       return this.handleTrack(request);
+    }
+
+    if (path === '/api/contact') {
+      return this.handleContactSubmission(request);
+    }
+
+    if (path === '/api/admin/messages') {
+      return this.handleAdminMessages(request);
     }
 
     if (path === '/api/admin/session') {
@@ -217,6 +236,60 @@ export class AdminData {
     );
   }
 
+  private async handleContactSubmission(request: Request): Promise<Response> {
+    if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
+    if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+
+    const body = await readJsonBody<{ name?: unknown; email?: unknown; subject?: unknown; message?: unknown }>(request);
+    const name = typeof body?.name === 'string' ? body.name.trim() : '';
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const subject = typeof body?.subject === 'string' ? body.subject.trim() : 'Feedback';
+    const message = typeof body?.message === 'string' ? body.message.trim() : '';
+    if (name.length < 2 || name.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+        email.length > 254 || message.length < 10 || message.length > 5000 ||
+        !['Feedback', 'Bug', 'Feature', 'Partnership'].includes(subject)) {
+      return jsonResponse({ error: 'Please provide a valid name, email, topic, and message (10–5000 characters).' }, 400);
+    }
+
+    const state = await this.getState();
+    const now = Date.now();
+    // Bound duplicate submissions from the same email without retaining IP addresses.
+    const recentFromSender = (state.messages ?? []).filter((item) =>
+      item.email === email && now - item.createdAt < 60_000
+    ).length;
+    if (recentFromSender >= 3) return jsonResponse({ error: 'Please wait before sending another message.' }, 429);
+
+    const entry: ContactMessage = {
+      id: `msg_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      name, email, subject, message, status: 'unread', createdAt: now,
+    };
+    state.messages = [entry, ...(state.messages ?? [])].slice(0, 1000);
+    await this.storage.put('admin-state', state);
+    return jsonResponse({ accepted: true, id: entry.id }, 201);
+  }
+
+  private async handleAdminMessages(request: Request): Promise<Response> {
+    if (!this.getSessionUser(request)) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const state = await this.getState();
+    if (request.method === 'GET') {
+      return jsonResponse({ messages: (state.messages ?? []).slice(0, 200) }, 200);
+    }
+    if (request.method === 'PATCH') {
+      if (!isSameOrigin(request)) return jsonResponse({ error: 'Forbidden' }, 403);
+      const body = await readJsonBody<{ id?: unknown; status?: unknown }>(request);
+      if (typeof body?.id !== 'string' || !['unread', 'read', 'archived'].includes(String(body.status))) {
+        return jsonResponse({ error: 'Invalid message update.' }, 400);
+      }
+      const messages = state.messages ?? [];
+      const target = messages.find((item) => item.id === body.id);
+      if (!target) return jsonResponse({ error: 'Message not found.' }, 404);
+      target.status = body.status as ContactMessage['status'];
+      await this.storage.put('admin-state', state);
+      return jsonResponse({ updated: true, message: target }, 200);
+    }
+    return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+
   private async handleTrack(request: Request): Promise<Response> {
     if (request.method !== 'POST') {
       return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -256,11 +329,15 @@ export class AdminData {
 
   private async getState(): Promise<AdminState> {
     const state = await this.storage.get<AdminState>('admin-state');
-    if (state) return state;
+    if (state) {
+      if (!Array.isArray(state.messages)) state.messages = [];
+      return state;
+    }
 
     const freshState: AdminState = {
       settings: { ...DEFAULT_SITE_SETTINGS },
       events: [],
+      messages: [],
     };
     await this.storage.put('admin-state', freshState);
     return freshState;
