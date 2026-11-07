@@ -48,6 +48,12 @@ interface HomepageSection {
   id: string; key: string; title: string; content: string;
   visible: boolean; position: number; updatedAt: number;
 }
+interface MediaAsset { id: string; key: string; name: string; type: string; size: number; createdAt: number; }
+interface R2BucketLike {
+  put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string,string> }): Promise<unknown>;
+  get(key: string): Promise<{ body: ReadableStream | null; httpMetadata?: { contentType?: string }; size?: number } | null>;
+  delete(key: string): Promise<void>;
+}
 interface AdminState {
   settings: SiteSettings;
   events: AnalyticsEvent[];
@@ -57,6 +63,7 @@ interface AdminState {
   redirects?: ManagedRedirect[];
   homepageSections?: HomepageSection[];
   backups?: Array<{ id: string; label: string; createdAt: number; snapshot: Omit<AdminState, 'backups'> }>;
+  media?: MediaAsset[];
 }
 
 interface StorageLike {
@@ -82,15 +89,17 @@ const ALLOWED_EVENT_TYPES = new Set(['pageview', 'tool_run']);
 export class AdminData {
   private readonly storage: StorageLike;
   private readonly secrets: AdminSecrets;
+  private readonly mediaBucket?: R2BucketLike;
   private readonly loginFailures = new Map<string, { count: number; firstAt: number }>();
 
   /**
    * Cloudflare constructs Durable Objects as `new AdminData(ctx, env)`, so the
    * secrets arrive here and never travel on the Request.
    */
-  constructor({ storage }: { storage: StorageLike }, env: AdminSecrets = {}) {
+  constructor({ storage }: { storage: StorageLike }, env: AdminSecrets & { MEDIA?: R2BucketLike } = {}) {
     this.storage = storage;
     this.secrets = env ?? {};
+    this.mediaBucket = env?.MEDIA;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -139,6 +148,7 @@ export class AdminData {
       return this.handleContent(request);
     }
     if (path === '/api/admin/activity') return this.handleActivity(request);
+    if (path === '/api/admin/media' || path.startsWith('/api/admin/media/')) return this.handleMedia(request);
     if (path === '/api/admin/redirects' || path.startsWith('/api/admin/redirects/')) {
       return this.handleRedirects(request);
     }
@@ -232,6 +242,53 @@ export class AdminData {
       state.content = items.filter((item) => item.id !== id);
       await this.storage.put('admin-state', state);
       await this.recordActivity(actor, 'delete', 'content', id);
+      return jsonResponse({ deleted: true }, 200);
+    }
+    return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+
+
+  private async handleMedia(request: Request): Promise<Response> {
+    const actor = this.getSessionUser(request);
+    if (!actor) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (!this.mediaBucket) return jsonResponse({ error: 'Media storage is not configured. Bind an R2 bucket named MEDIA.' }, 503);
+    const state = await this.getState();
+    const url = new URL(request.url);
+    const id = url.pathname.startsWith('/api/admin/media/') ? decodeURIComponent(url.pathname.slice('/api/admin/media/'.length)) : '';
+    if (request.method === 'GET' && !id) return jsonResponse({ media: state.media ?? [] }, 200);
+    if (!isSameOrigin(request) && request.method !== 'GET') return jsonResponse({ error: 'Forbidden' }, 403);
+    if (request.method === 'POST') {
+      const form = await request.formData().catch(() => null);
+      const file = form?.get('file');
+      if (!(file instanceof File)) return jsonResponse({ error: 'Select an image file to upload.' }, 400);
+      const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif']);
+      if (!allowed.has(file.type) || file.size < 1 || file.size > 10 * 1024 * 1024) {
+        return jsonResponse({ error: 'Only JPEG, PNG, WebP, AVIF, or GIF images up to 10 MB are accepted.' }, 400);
+      }
+      const id = `med_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+      const extension = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif', 'image/gif': 'gif' } as Record<string,string>)[file.type];
+      const key = `uploads/${id}.${extension}`;
+      await this.mediaBucket.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { uploadedBy: actor } });
+      const asset: MediaAsset = { id, key, name: file.name.slice(0,200), type: file.type, size: file.size, createdAt: Date.now() };
+      state.media = [asset, ...(state.media ?? [])].slice(0, 1000);
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor, 'upload', 'media', id);
+      return jsonResponse({ media: asset }, 201);
+    }
+    if (request.method === 'GET' && id) {
+      const asset = (state.media ?? []).find((item) => item.id === id);
+      if (!asset) return jsonResponse({ error: 'Media asset not found.' }, 404);
+      const object = await this.mediaBucket.get(asset.key);
+      if (!object?.body) return jsonResponse({ error: 'Media object is unavailable.' }, 404);
+      return new Response(object.body, { status: 200, headers: { 'Content-Type': object.httpMetadata?.contentType ?? asset.type, 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' } });
+    }
+    if (request.method === 'DELETE' && id) {
+      const asset = (state.media ?? []).find((item) => item.id === id);
+      if (!asset) return jsonResponse({ error: 'Media asset not found.' }, 404);
+      await this.mediaBucket.delete(asset.key);
+      state.media = (state.media ?? []).filter((item) => item.id !== id);
+      await this.storage.put('admin-state', state);
+      await this.recordActivity(actor, 'delete', 'media', id);
       return jsonResponse({ deleted: true }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -595,13 +652,14 @@ export class AdminData {
       if (!Array.isArray(state.redirects)) state.redirects = [];
       if (!Array.isArray(state.homepageSections)) state.homepageSections = [];
       if (!Array.isArray(state.backups)) state.backups = [];
+      if (!Array.isArray(state.media)) state.media = [];
       return state;
     }
 
     const freshState: AdminState = {
       settings: { ...DEFAULT_SITE_SETTINGS },
       events: [],
-      messages: [], content: [], activity: [], redirects: [], homepageSections: [], backups: [],
+      messages: [], content: [], activity: [], redirects: [], homepageSections: [], backups: [], media: [],
     };
     await this.storage.put('admin-state', freshState);
     return freshState;
@@ -621,6 +679,7 @@ export class AdminData {
 
 export interface Env extends AdminSecrets {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
+  MEDIA?: R2BucketLike;
   ADMIN_DATA: {
     idFromName: (name: string) => string;
     get: (id: string) => { fetch: (request: Request) => Promise<Response> };
