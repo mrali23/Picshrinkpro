@@ -192,7 +192,7 @@ test('CMS supports draft creation, versioned editing, publishing, and public rea
   const articlePage = await app.fetch('/blog/managed-article');
   assert.equal(articlePage.status, 200);
   const articleHtml = await articlePage.text();
-  assert.match(articleHtml, /<h1[^>]*>A Managed Article<\/h1>/);
+  assert.ok(articleHtml.includes('<h1 class="text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl">A Managed Article</h1>'));
   assert.match(articleHtml, /canonical/);
   assert.match(articleHtml, /First paragraph/);
   const publicIndex = await app.fetch('/api/content');
