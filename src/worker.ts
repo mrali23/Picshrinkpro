@@ -927,7 +927,7 @@ function createSessionToken(username: string, role: AdminRole, sessionVersion: n
   return `${payload}.${sign(payload, secret)}`;
 }
 
-function verifySessionToken(token: string, secret: string): { username: string; role: AdminRole } | undefined {
+function verifySessionToken(token: string, secret: string): { username: string; role: AdminRole; sessionVersion: number } | undefined {
   const [payload, signature, extra] = token.split('.');
   if (!payload || !signature || extra !== undefined) return undefined;
   if (!safeEqual(signature, sign(payload, secret))) return undefined;
