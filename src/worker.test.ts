@@ -203,7 +203,7 @@ test('admin logout clears the secure session cookie', async () => {
   });
   assert.equal(logout.status, 200);
   assert.match(logout.headers.get('Set-Cookie') ?? '', /Max-Age=0/);
-  const after = await app.fetch('/api/admin/session');
+  const after = await app.fetch('/api/admin/session', { headers: { Cookie: cookie } });
   assert.deepEqual(await after.json(), { authenticated: false });
 });
 
