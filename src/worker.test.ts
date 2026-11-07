@@ -195,6 +195,36 @@ test('CMS supports draft creation, versioned editing, publishing, and public rea
 
 
 
+
+test('CMS revisions preserve previous content and restore safely as draft', async () => {
+  const app = createTestApp();
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const create = await app.fetch('/api/admin/content', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'Revision Original', slug: 'revision-original', excerpt: 'Original excerpt', body: 'Original body', status: 'draft' }),
+  });
+  const created = (await create.json() as { content: { id: string; version: number } }).content;
+  const edit = await app.fetch('/api/admin/content/' + created.id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'Revision Updated', version: 1 }),
+  });
+  assert.equal(edit.status, 200);
+  const history = await app.fetch('/api/admin/content/' + created.id + '/revisions', { headers: { Cookie: cookie } });
+  const revisions = (await history.json() as { revisions: Array<{ id: string; version: number; title: string }> }).revisions;
+  assert.equal(revisions.length, 2);
+  const original = revisions.find((revision) => revision.version === 1)!;
+  const restore = await app.fetch('/api/admin/content/' + created.id + '/revisions/' + original.id + '/restore', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ version: 2 }),
+  });
+  assert.equal(restore.status, 200);
+  const restored = (await restore.json() as { content: { title: string; status: string; version: number } }).content;
+  assert.equal(restored.title, 'Revision Original');
+  assert.equal(restored.status, 'draft');
+  assert.equal(restored.version, 3);
+});
+
 test('CMS scheduled articles stay private until the authenticated publisher runs', async () => {
   const app = createTestApp();
   const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
