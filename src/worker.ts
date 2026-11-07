@@ -112,6 +112,7 @@ export class AdminData {
     const path = url.pathname;
 
     if (path === '/api/content' || path.startsWith('/api/content/')) return this.handlePublicContent(request);
+    if (path.startsWith('/media/')) return this.handlePublicMedia(request);
     if (path === '/api/settings') {
       return this.handleGetPublicSettings();
     }
@@ -468,6 +469,27 @@ export class AdminData {
       return jsonResponse({ restored: true }, 200);
     }
     return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+
+
+  private async handlePublicMedia(request: Request): Promise<Response> {
+    if (request.method !== 'GET' && request.method !== 'HEAD') return jsonResponse({ error: 'Method not allowed' }, 405);
+    if (!this.mediaBucket) return jsonResponse({ error: 'Media storage is not configured.' }, 503);
+    const id = decodeURIComponent(new URL(request.url).pathname.slice('/media/'.length));
+    const state = await this.getState();
+    const asset = (state.media ?? []).find((item) => item.id === id);
+    if (!asset) return jsonResponse({ error: 'Media asset not found.' }, 404);
+    const object = await this.mediaBucket.get(asset.key);
+    if (!object?.body) return jsonResponse({ error: 'Media object is unavailable.' }, 404);
+    return new Response(request.method === 'HEAD' ? null : object.body, {
+      status: 200,
+      headers: {
+        'Content-Type': object.httpMetadata?.contentType ?? asset.type,
+        'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Disposition': 'inline',
+      },
+    });
   }
 
   private async handlePublicContent(request: Request): Promise<Response> {
@@ -987,7 +1009,7 @@ const worker = {
     const url = new URL(request.url);
     let response: Response;
 
-    if (url.pathname.startsWith('/api/')) {
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/')) {
       response = await adminApi(request, env);
     } else {
       const redirectResponse = request.method === 'GET' ? await adminApi(new Request(new URL(`/api/redirect/resolve?path=${encodeURIComponent(url.pathname)}`, url), { method: 'GET' }), env) : undefined;
