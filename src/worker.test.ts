@@ -122,6 +122,73 @@ test('analytics events update shared live dashboard metrics', async () => {
 
 
 
+
+test('CMS supports draft creation, versioned editing, publishing, and public reads', async () => {
+  const app = createTestApp();
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const create = await app.fetch('/api/admin/content', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'A Managed Article', slug: 'Managed Article', excerpt: 'A short summary', body: 'First paragraph.\\n\\nSecond paragraph.', status: 'draft' }),
+  });
+  assert.equal(create.status, 201);
+  const created = (await create.json() as { content: { id: string; slug: string; version: number } }).content;
+  assert.equal(created.slug, 'managed-article');
+  assert.equal(created.version, 1);
+  assert.equal((await app.fetch('/api/content/managed-article')).status, 404);
+
+  const stale = await app.fetch('/api/admin/content/' + created.id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'Stale edit', version: 0 }),
+  });
+  assert.equal(stale.status, 409);
+
+  const publish = await app.fetch('/api/admin/content/' + created.id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ title: 'A Managed Article', status: 'published', version: 1 }),
+  });
+  assert.equal(publish.status, 200);
+  const publicArticle = await app.fetch('/api/content/managed-article');
+  assert.equal(publicArticle.status, 200);
+  assert.equal((await publicArticle.json() as { content: { status: string } }).content.status, 'published');
+  const publicIndex = await app.fetch('/api/content');
+  assert.equal((await publicIndex.json() as { content: unknown[] }).content.length, 1);
+});
+
+test('SEO redirects are validated, listed, and applied by the Worker', async () => {
+  const app = createTestApp();
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const created = await app.fetch('/api/admin/redirects', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ sourcePath: '/old-guide', destinationUrl: '/blog', statusCode: 301 }),
+  });
+  assert.equal(created.status, 201);
+  const bad = await app.fetch('/api/admin/redirects', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ sourcePath: '/unsafe', destinationUrl: '//evil.example', statusCode: 301 }),
+  });
+  assert.equal(bad.status, 400);
+  const publicResponse = await app.fetch('/old-guide', { redirect: 'manual' });
+  assert.equal(publicResponse.status, 301);
+  assert.equal(publicResponse.headers.get('Location'), 'https://picshrink.test/blog');
+});
+
+test('activity log and backup snapshots are available to authenticated administrators', async () => {
+  const app = createTestApp();
+  const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
+  const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
+  const created = await app.fetch('/api/admin/backups', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ label: 'Before update' }),
+  });
+  assert.equal(created.status, 201);
+  const backups = await app.fetch('/api/admin/backups', { headers: { Cookie: cookie } });
+  assert.equal((await backups.json() as { backups: unknown[] }).backups.length, 1);
+  const activity = await app.fetch('/api/admin/activity', { headers: { Cookie: cookie } });
+  assert.ok((await activity.json() as { activity: Array<{ action: string }> }).activity.some((item) => item.action === 'create'));
+});
+
 test('admin logout clears the secure session cookie', async () => {
   const app = createTestApp();
   const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
