@@ -377,7 +377,7 @@ test('media assets are copied into R2 backups and restored with their metadata',
     },
     get: async (key) => {
       const item = objects.get(key);
-      return item ? { body: new Response(item.bytes).body, httpMetadata: { contentType: item.contentType }, size: item.bytes.length } : null;
+      return item ? { body: new Response(item.bytes.buffer as ArrayBuffer).body, httpMetadata: { contentType: item.contentType }, size: item.bytes.length } : null;
     },
     delete: async (key) => { objects.delete(key); },
   };
