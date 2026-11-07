@@ -112,6 +112,7 @@ export class AdminData {
     const path = url.pathname;
 
     if (path === '/api/content' || path.startsWith('/api/content/')) return this.handlePublicContent(request);
+    if (path === '/api/sitemap-content') return this.handleSitemapContent(request);
     if (path === '/api/homepage-sections') return this.handlePublicHomepageSections(request);
     if (path.startsWith('/media/')) return this.handlePublicMedia(request);
     if (path === '/api/settings') {
@@ -506,6 +507,15 @@ export class AdminData {
     });
   }
 
+  private async handleSitemapContent(request: Request): Promise<Response> {
+    if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+    const state = await this.getState();
+    const content = (state.content ?? [])
+      .filter((item) => item.status === 'published')
+      .map((item) => ({ slug: item.slug, updatedAt: item.updatedAt }));
+    return jsonResponse({ content }, 200);
+  }
+
   private async handlePublicContent(request: Request): Promise<Response> {
     if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
     const pathname = new URL(request.url).pathname;
@@ -889,6 +899,10 @@ async function verifyAdminPassword(password: string, saltValue: string, expected
   } catch { return false; }
 }
 
+function escapeXml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
 function defaultHomepageSections(): HomepageSection[] {
   const now = Date.now();
   return [
@@ -1028,7 +1042,21 @@ const worker = {
     const url = new URL(request.url);
     let response: Response;
 
-    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/')) {
+    if (url.pathname === '/sitemap.xml' && request.method === 'GET') {
+      const staticSitemap = await env.ASSETS.fetch(request);
+      const staticXml = staticSitemap.ok ? await staticSitemap.text() : '<?xml version="1.0" encoding="UTF-8"?>\\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>';
+      const contentResponse = await adminApi(new Request(new URL('/api/sitemap-content', url), { method: 'GET' }));
+      const payload = contentResponse.ok ? await contentResponse.json() as { content?: Array<{ slug: string; updatedAt: number }> } : { content: [] };
+      const entries = (payload.content ?? []).map((item) => {
+        const loc = `${url.origin}/blog/${encodeURIComponent(item.slug)}`;
+        const lastmod = new Date(item.updatedAt).toISOString().slice(0, 10);
+        return `  <url><loc>${escapeXml(loc)}</loc><lastmod>${lastmod}</lastmod></url>`;
+      });
+      const xml = staticXml.includes('</urlset>')
+        ? staticXml.replace('</urlset>', `${entries.length ? `\\n${entries.join('\\n')}\\n` : ''}</urlset>`)
+        : `<?xml version="1.0" encoding="UTF-8"?>\\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\\n${entries.join('\\n')}\\n</urlset>`;
+      response = new Response(xml, { status: 200, headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=300, stale-while-revalidate=600' } });
+    } else if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/')) {
       response = await adminApi(request, env);
     } else {
       const redirectResponse = request.method === 'GET' ? await adminApi(new Request(new URL(`/api/redirect/resolve?path=${encodeURIComponent(url.pathname)}`, url), { method: 'GET' }), env) : undefined;
