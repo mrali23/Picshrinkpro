@@ -232,7 +232,7 @@ test('admin logout clears the secure session cookie', async () => {
   const login = await app.fetch('/api/admin/login', loginRequest('test-admin', 'test-password'));
   const cookie = login.headers.get('Set-Cookie')!.split(';')[0];
   const before = await app.fetch('/api/admin/session', { headers: { Cookie: cookie } });
-  assert.deepEqual(await before.json(), { authenticated: true });
+  assert.deepEqual(await before.json(), { authenticated: true, username: 'test-admin', role: 'admin' });
 
   const logout = await app.fetch('/api/admin/logout', {
     method: 'POST',
@@ -329,7 +329,7 @@ test('session cookie is Secure, HttpOnly and cannot be forged or tampered with',
 
   const token = setCookie.split(';')[0].split('=')[1];
   const ok = await app.fetch('/api/admin/session', { headers: { Cookie: `picshrink_session=${token}` } });
-  assert.deepEqual(await ok.json(), { authenticated: true });
+  assert.deepEqual(await ok.json(), { authenticated: true, username: 'test-admin', role: 'admin' });
 
   const [payload] = token.split('.');
   const tampered = await app.fetch('/api/admin/session', { headers: { Cookie: `picshrink_session=${payload}.forged` } });
