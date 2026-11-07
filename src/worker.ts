@@ -184,7 +184,7 @@ export class AdminData {
     const id = url.pathname.startsWith('/api/admin/content/') ? decodeURIComponent(url.pathname.slice('/api/admin/content/'.length)) : '';
     if (request.method === 'GET') {
       const status = url.searchParams.get('status');
-      const items = (state.content ?? []).filter((item) => !status || item.status === status).sort((a,b) => b.updatedAt-a.updatedAt);
+      const items = (state.content ?? []).filter((item) => actor.role === 'viewer' ? item.status === 'published' : (!status || item.status === status)).sort((a,b) => b.updatedAt-a.updatedAt);
       return jsonResponse({ content: items }, 200);
     }
     if (request.method !== 'GET' && actor.role === 'viewer') return jsonResponse({ error: 'Forbidden' }, 403);
@@ -567,6 +567,7 @@ export class AdminData {
     if (!user) {
       if (record) record.count += 1;
       else state.loginAttempts.push({ key: clientKey, count: 1, firstAt: now });
+      state.loginAttempts = state.loginAttempts.slice(-1000);
       await this.storage.put('admin-state', state);
       return jsonResponse({ error: 'Invalid login credentials' }, 401);
     }
