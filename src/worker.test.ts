@@ -391,6 +391,14 @@ test('media assets are copied into R2 backups and restored with their metadata',
   assert.equal(upload.status, 201);
   const asset = (await upload.json() as { media: { id: string; key: string; folder: string } }).media;
   assert.equal(asset.folder, 'blog');
+  const metadata = await app.fetch('/api/admin/media/' + asset.id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
+    body: JSON.stringify({ name: 'Hero image.png', altText: 'PicShrinkPro article cover', folder: 'blog-assets' }),
+  });
+  assert.equal(metadata.status, 200);
+  const updatedAsset = (await metadata.json() as { media: { altText: string; folder: string } }).media;
+  assert.equal(updatedAsset.altText, 'PicShrinkPro article cover');
+  assert.equal(updatedAsset.folder, 'blog-assets');
 
   const backup = await app.fetch('/api/admin/backups', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://picshrink.test' },
@@ -412,7 +420,8 @@ test('media assets are copied into R2 backups and restored with their metadata',
   const media = (await app.fetch('/api/admin/media', { headers: { Cookie: cookie } }).then((response) => response.json()) as { media: Array<{ id: string; folder: string }> }).media;
   assert.equal(media.length, 1);
   assert.equal(media[0].id, asset.id);
-  assert.equal(media[0].folder, 'blog');
+  assert.equal(media[0].folder, 'blog-assets');
+  assert.equal((media[0] as { altText?: string }).altText, 'PicShrinkPro article cover');
   assert.equal((await app.fetch('/media/' + asset.id)).status, 200);
 });
 
