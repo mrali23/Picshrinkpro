@@ -57,7 +57,7 @@ export function AppRoutes() {
     <>
         <RouteTracker />
         <div className="flex flex-col min-h-screen bg-slate-50 text-slate-800">
-          {!isAdminRoute && <Navbar />
+          {!isAdminRoute && <Navbar />}
           <main className="flex-1">
             <Suspense fallback={<div role="status" className="mx-auto max-w-5xl px-4 py-16 text-center text-slate-500">Loading page…</div>}>
             <Routes>
