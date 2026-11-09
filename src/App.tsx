@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { Navbar } from './components/layout/Navbar';
@@ -31,7 +31,7 @@ const BlogPostPage = lazy(() => import('./pages/blog/BlogPostPage').then(m => ({
 
 // Admin
 const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })));
-import { analytics } from './utils/analytics';
+import { analytics, isAdminPath } from './utils/analytics';
 
 // Scroll to top & real-time analytics tracker on route change
 function RouteTracker() {
@@ -42,9 +42,13 @@ function RouteTracker() {
     analytics.trackPageView(pathname);
   }, [pathname]);
 
+  // Start Google Analytics once, on the first public page. Never on /admin.
+  const gaStarted = useRef(false);
   useEffect(() => {
+    if (isAdminPath(pathname) || gaStarted.current) return;
+    gaStarted.current = true;
     analytics.initGA4();
-  }, []);
+  }, [pathname]);
 
   return null;
 }

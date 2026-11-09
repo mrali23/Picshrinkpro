@@ -46,6 +46,11 @@ function persist(data: StoredAnalytics): void {
   }
 }
 
+/** The admin area must never be tracked: it would skew stats and load advertising and remarketing requests. */
+export function isAdminPath(path: string): boolean {
+  return path === '/admin' || path.startsWith('/admin/');
+}
+
 function isValidGa(id: string): boolean {
   return /^G-[A-Z0-9]+$/i.test(id);
 }
@@ -68,7 +73,7 @@ function visitorId(): string {
 }
 
 function sendSharedEvent(type: 'pageview' | 'tool_run', path: string): void {
-  if (path === '/admin') return;
+  if (isAdminPath(path)) return;
   fetch('/api/analytics/track', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -85,6 +90,7 @@ function sendSharedEvent(type: 'pageview' | 'tool_run', path: string): void {
 
 function configureGA4(measurementId: string): void {
   const id = measurementId.trim();
+  if (typeof window !== 'undefined' && isAdminPath(window.location.pathname)) return;
   if (!isValidGa(id) || typeof window === 'undefined') {
     if (!id && activeMeasurementId) {
       document.getElementById('ga4-script')?.remove();
@@ -144,7 +150,7 @@ export const analytics = {
   },
 
   trackPageView(path: string): void {
-    if (path === '/admin') return;
+    if (isAdminPath(path)) return;
     const data = readStored();
     data.events.unshift({
       id: 'pv-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
