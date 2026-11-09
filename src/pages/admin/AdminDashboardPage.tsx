@@ -3,6 +3,7 @@ import { Helmet } from 'react-helmet-async';
 import { Activity, BarChart3, Check, Eye, EyeOff, FileText, Image, LogOut, Mail, Save, Settings, ShieldCheck, Users } from 'lucide-react';
 import { analytics, type AnalyticsEvent } from '../../utils/analytics';
 import { DEFAULT_SITE_SETTINGS, type SiteSettings } from '../../utils/siteSettings';
+import { AdminModeToggle, ThemeSettingsSection } from '../../components/admin/ThemeControls';
 
 interface AnalyticsSummary {
   realtimeActiveUsers: number;
@@ -473,9 +474,12 @@ function AdminDashboardContent() {
             <h1 className="mt-2 text-3xl font-bold text-slate-900">Admin dashboard</h1>
             <p className="mt-1 text-slate-500">Manage site metadata, analytics, and live ad placements.</p>
           </div>
-          <button onClick={handleLogout} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-            <LogOut size={17} /> Sign out
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <AdminModeToggle defaultMode={settings.theme.defaultMode} />
+            <button onClick={handleLogout} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+              <LogOut size={17} /> Sign out
+            </button>
+          </div>
         </header>
 
         <nav className="mb-6 flex gap-2 border-b border-slate-200">
@@ -693,6 +697,8 @@ function AdminDashboardContent() {
               </div>
               <p className="mt-4 text-xs text-slate-500">Ads display only when enabled and both a publisher ID and the placement’s slot ID are set. AdSense approval and an authorized domain are required for live ads.</p>
             </section>
+
+            <ThemeSettingsSection theme={settings.theme} onChange={(patch) => updateSettings({ theme: { ...settings.theme, ...patch } })} />
 
             <button disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
               <Save size={17} />{busy ? 'Saving…' : 'Save site settings'}

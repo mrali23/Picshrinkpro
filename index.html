@@ -8,6 +8,18 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="theme-color" content="#2F6BFF" />
+    <script>
+      // Paint the saved theme (brand color, corners, dark mode) before React loads, to avoid a flash.
+      try {
+        var t = JSON.parse(localStorage.getItem('picshrink_theme_cache_' + (location.pathname.indexOf('/admin') === 0 ? 'admin' : 'public')) || 'null');
+        if (t) {
+          var r = document.documentElement;
+          for (var k in t.vars) r.style.setProperty(k, t.vars[k]);
+          if (t.scale) r.style.setProperty('--radius-scale', t.scale);
+          r.setAttribute('data-theme', t.dark ? 'dark' : 'light');
+        }
+      } catch (e) {}
+    </script>
     <!-- Per-page title, description, canonical, Open Graph, Twitter and JSON-LD are injected at build time
          (scripts/prerender.mjs) and kept in sync at runtime by react-helmet-async (SEOHead). -->
 

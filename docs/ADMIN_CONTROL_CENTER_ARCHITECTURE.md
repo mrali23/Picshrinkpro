@@ -129,3 +129,12 @@ The GitHub Actions build pipeline has passed type-checking, automated tests, the
 - Full browser E2E, accessibility, mobile visual regression, Cloudflare preview, production smoke tests and rollback validation remain outstanding.
 
 The passing CI checks are not a substitute for Cloudflare account provisioning or production preview testing. Do not merge/deploy until the infrastructure blockers and release checks are completed.
+
+## Theme and dark mode
+
+- `src/utils/theme.ts` holds the shared theme model (primary color, corner style, default mode, public dark mode), validation used by both the admin form and the Worker, and the DOM helper that applies it.
+- Theme settings live inside the existing site settings (`/api/admin/settings`, public read at `/api/settings`). The Worker rejects invalid colors and any primary color whose white-text contrast is below WCAG AA (4.5:1) with HTTP 400.
+- `src/index.css` maps Tailwind's `blue` scale to `--brand-*` variables and scales radii with `--radius-scale`. With no primary color set the values are identical to Tailwind's defaults, so the default look does not change.
+- Dark mode switches the `slate` scale under `:root[data-theme='dark']`, plus a few rules for white surfaces and gradient stops. Public visitors only get dark mode when "Allow dark mode on the public site" is enabled; the admin can always use it (toggle in the admin header, stored per browser).
+- `index.html` has a small inline script that applies the cached theme before React loads to avoid a flash. If a Content-Security-Policy is added later, this script needs a hash or nonce.
+- Not yet live across open tabs: a saved theme reaches other already-open pages on their next settings fetch. Instant push needs the realtime phase.
