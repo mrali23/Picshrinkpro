@@ -35,6 +35,13 @@
       data-src="https://analytics.ahrefs.com/analytics.js"
       data-key="rz6iLvSCak6xN+IoaDuDlg"
     ></script>
+    <script>
+      // Keep third-party tracking off the admin area (it would skew stats and trigger ad/remarketing requests).
+      if (location.pathname.indexOf('/admin') === 0) {
+        var ahrefs = document.querySelector('script[data-consent="analytics"]');
+        if (ahrefs) ahrefs.remove();
+      }
+    </script>
 
     <!--
       Google tags are placed after CookieHub so its configured automatic blocker /
@@ -46,6 +53,7 @@
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       window.addEventListener('load', function() {
+        if (location.pathname.indexOf('/admin') === 0) return;
         gtag('js', new Date());
         gtag('config', 'G-TP5X9WE2N2', { transport_type: 'beacon' });
       });
