@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DEFAULT_THEME, type ThemeSettings } from './theme';
 
 export interface SiteSettings {
   siteName: string;
@@ -11,6 +12,7 @@ export interface SiteSettings {
     sidebar: string;
     bottom: string;
   };
+  theme: ThemeSettings;
 }
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
@@ -20,6 +22,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   adsEnabled: false,
   adsensePublisherId: '',
   adSlots: { top: '', sidebar: '', bottom: '' },
+  theme: DEFAULT_THEME,
 };
 
 const LOCAL_SETTINGS_KEY = 'picshrink_site_settings';
@@ -34,6 +37,7 @@ export function getLocalSiteSettings(): SiteSettings {
       ...DEFAULT_SITE_SETTINGS,
       ...settings,
       adSlots: { ...DEFAULT_SITE_SETTINGS.adSlots, ...settings.adSlots },
+      theme: { ...DEFAULT_THEME, ...settings.theme },
     };
   } catch {
     return DEFAULT_SITE_SETTINGS;
@@ -76,5 +80,6 @@ export function usePublicSiteSettings(): SiteSettings {
 export async function fetchPublicSiteSettings(): Promise<SiteSettings> {
   const response = await fetch('/api/settings', { headers: { Accept: 'application/json' } });
   if (!response.ok) throw new Error('Site settings could not be loaded.');
-  return { ...DEFAULT_SITE_SETTINGS, ...await response.json() as Partial<SiteSettings> };
+  const data = await response.json() as Partial<SiteSettings>;
+  return { ...DEFAULT_SITE_SETTINGS, ...data, theme: { ...DEFAULT_THEME, ...data.theme } };
 }

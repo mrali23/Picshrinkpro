@@ -5,6 +5,8 @@ import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { RelatedLinks } from './components/common/RelatedLinks';
+import { usePublicSiteSettings } from './utils/siteSettings';
+import { applyTheme, onThemeModeChanged } from './utils/theme';
 
 // Route-level lazy loading keeps image-processing dependencies out of the initial page bundle.
 const HomePage = lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })));
@@ -53,6 +55,27 @@ function RouteTracker() {
   return null;
 }
 
+/** Applies the admin-managed theme (brand color, corners, light/dark) to the page and keeps it live. */
+function ThemeApplier() {
+  const { theme } = usePublicSiteSettings();
+  const { pathname } = useLocation();
+  const scope = pathname.startsWith('/admin') ? 'admin' : 'public';
+
+  useEffect(() => {
+    const apply = () => applyTheme(theme, scope);
+    apply();
+    const stopMode = onThemeModeChanged(apply);
+    const query = window.matchMedia?.('(prefers-color-scheme: dark)');
+    query?.addEventListener('change', apply);
+    return () => {
+      stopMode();
+      query?.removeEventListener('change', apply);
+    };
+  }, [theme, scope]);
+
+  return null;
+}
+
 /** Routes and layout without a router, so the same tree is used by the browser and by the build-time prerender. */
 export function AppRoutes() {
   const location = useLocation();
@@ -60,6 +83,7 @@ export function AppRoutes() {
   return (
     <>
         <RouteTracker />
+        <ThemeApplier />
         <div className="flex flex-col min-h-screen bg-slate-50 text-slate-800">
           {!isAdminRoute && <Navbar />}
           <main className="flex-1">

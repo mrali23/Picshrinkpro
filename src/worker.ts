@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { DEFAULT_THEME, sanitizeTheme, themeValidationError, type ThemeSettings } from './utils/theme';
 
 export interface SiteSettings {
   siteName: string;
@@ -11,6 +12,7 @@ export interface SiteSettings {
     sidebar: string;
     bottom: string;
   };
+  theme: ThemeSettings;
 }
 
 export interface AnalyticsEvent {
@@ -828,6 +830,8 @@ export class AdminData {
         return jsonResponse({ error: 'Forbidden' }, 403);
       }
       const body = await readJsonBody<unknown>(request);
+      const themeError = themeValidationError((body as { theme?: unknown } | undefined)?.theme);
+      if (themeError) return jsonResponse({ error: themeError }, 400);
       const nextSettings = sanitizeSettings(body);
       await this.saveSettings(nextSettings);
       return jsonResponse(nextSettings, 200);
@@ -954,7 +958,7 @@ export class AdminData {
 
   private async getSettings(): Promise<SiteSettings> {
     const state = await this.getState();
-    return { ...DEFAULT_SITE_SETTINGS, ...state.settings };
+    return { ...DEFAULT_SITE_SETTINGS, ...state.settings, theme: sanitizeTheme(state.settings?.theme) };
   }
 
   private async saveSettings(settings: SiteSettings): Promise<void> {
@@ -1057,6 +1061,7 @@ const DEFAULT_SITE_SETTINGS: SiteSettings = {
   adsEnabled: false,
   adsensePublisherId: '',
   adSlots: { top: '', sidebar: '', bottom: '' },
+  theme: DEFAULT_THEME,
 };
 
 function sanitizeCanonicalUrl(value: unknown): string {
@@ -1127,6 +1132,7 @@ function sanitizeSettings(input: unknown): SiteSettings {
       sidebar: clampString(slots.sidebar, '', 40),
       bottom: clampString(slots.bottom, '', 40),
     },
+    theme: sanitizeTheme(body.theme),
   };
 }
 

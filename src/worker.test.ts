@@ -81,6 +81,7 @@ test('admin endpoints require a valid session and save site settings', async () 
     adsEnabled: true,
     adsensePublisherId: 'ca-pub-1234567890123456',
     adSlots: { top: '1234567890', sidebar: '2345678901', bottom: '3456789012' },
+    theme: { primaryColor: '', radius: 'default', defaultMode: 'light', publicDarkMode: false },
   };
   const save = await app.fetch('/api/admin/settings', {
     method: 'POST',
@@ -90,6 +91,39 @@ test('admin endpoints require a valid session and save site settings', async () 
   assert.equal(save.status, 200);
   const publicSettings = await app.fetch('/api/settings');
   assert.deepEqual(await publicSettings.json(), settings);
+});
+
+test('theme settings are validated on the server and exposed publicly', async () => {
+  const app = createTestApp();
+  const login = await app.fetch('/api/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'test-admin', password: 'test-password' }),
+  });
+  const cookieHeader = (login.headers.get('Set-Cookie') ?? '').split(';')[0];
+  const post = (theme: unknown) => app.fetch('/api/admin/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+    body: JSON.stringify({ siteName: 'Theme Test', theme }),
+  });
+
+  assert.equal((await app.fetch('/api/settings')).status, 200);
+  const defaults = await (await app.fetch('/api/settings')).json() as { theme: unknown };
+  assert.deepEqual(defaults.theme, { primaryColor: '', radius: 'default', defaultMode: 'light', publicDarkMode: false });
+
+  assert.equal((await post({ primaryColor: 'red' })).status, 400);
+  assert.equal((await post({ primaryColor: '#ffff00' })).status, 400);
+  assert.equal((await post({ radius: 'huge' })).status, 400);
+
+  const saved = await post({ primaryColor: '#7C3AED', radius: 'round', defaultMode: 'system', publicDarkMode: true });
+  assert.equal(saved.status, 200);
+  const publicSettings = await (await app.fetch('/api/settings')).json() as { theme: unknown };
+  assert.deepEqual(publicSettings.theme, { primaryColor: '#7c3aed', radius: 'round', defaultMode: 'system', publicDarkMode: true });
+
+  const anonymous = await app.fetch('/api/admin/settings', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: { primaryColor: '#7c3aed' } }),
+  });
+  assert.equal(anonymous.status, 401);
 });
 
 test('analytics events update shared live dashboard metrics', async () => {
